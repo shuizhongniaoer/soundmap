@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>录音详情 - 回声笔记</title>
+<style>
+  :root { --accent: #2e5a88; --bg: #f5f7fa; --card: #fff; --text: #1f2933; --muted: #7b8794; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 20px; }
+  a.back { color: var(--muted); text-decoration: none; font-size: 14px; }
+  h1 { font-size: 20px; margin: 10px 0; }
+  audio { width: 100%; margin: 10px 0; }
+  .tabs { display: flex; gap: 6px; margin-top: 14px; }
+  .tab { padding: 9px 20px; border-radius: 8px 8px 0 0; background: #e4e9ef; cursor: pointer; font-size: 14px; }
+  .tab.on { background: var(--card); color: var(--accent); font-weight: 600; }
+  .panel { background: var(--card); border-radius: 0 12px 12px 12px; padding: 22px; min-height: 380px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .seg { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0f3f6; font-size: 14px; line-height: 1.7; }
+  .seg .who { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .seg .ts { color: var(--muted); font-size: 12px; white-space: nowrap; padding-top: 3px; }
+  h3 { color: var(--accent); font-size: 15px; margin: 18px 0 8px; }
+  h3:first-child { margin-top: 0; }
+  ul { padding-left: 22px; line-height: 1.9; font-size: 14px; }
+  .abstract { font-size: 14px; line-height: 1.8; background: #f2f6fa; border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 0 8px 8px 0; }
+  #mindmap { width: 100%; height: 520px; }
+  .status { text-align: center; color: var(--muted); padding: 80px 0; font-size: 15px; }
+  .err { color: #c0392b; }
+  button.re { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">← 返回列表</a>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h1 id="title">加载中…</h1>
+    <button class="re" onclick="reprocess()">重新生成</button>
+  </div>
+  <audio id="player" controls preload="none"></audio>
+
+  <div class="tabs">
+    <div class="tab on" data-p="transcript">转写稿</div>
+    <div class="tab" data-p="summary">AI 总结</div>
+    <div class="tab" data-p="mindmap">思维导图</div>
+  </div>
+  <div class="panel">
+    <div id="p-transcript"><div class="status">处理中…</div></div>
+    <div id="p-summary" hidden></div>
+    <div id="p-mindmap" hidden><svg id="mindmap"></svg></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.4/dist/browser/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.4/dist/browser/index.js"></script>
+<script>
+const id = new URLSearchParams(location.search).get('id');
+let rec = null, mmRendered = false;
+
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  ['transcript', 'summary', 'mindmap'].forEach(p =>
+    document.getElementById('p-' + p).hidden = p !== t.dataset.p);
+  if (t.dataset.p === 'mindmap') renderMindmap();
+});
+
+const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function load() {
+  rec = await (await fetch('/api/recordings/' + id)).json();
+  document.getElementById('title').textContent = rec.title || rec.originalName;
+  document.getElementById('player').src = '/uploads/' + rec.filename;
+
+  const tEl = document.getElementById('p-transcript');
+  if (rec.status === 'error') {
+    tEl.innerHTML = `<div class="status err">处理失败：${esc(rec.error || '')}</div>`;
+    return;
+  }
+  if (rec.transcript) {
+    tEl.innerHTML = rec.transcript.segments.map(s =>
+      `<div class="seg"><span class="ts">${fmt(s.start)}</span><span class="who">${esc(s.speaker)}</span><span>${esc(s.text)}</span></div>`
+    ).join('');
+  }
+  if (rec.summary) {
+    const s = rec.summary;
+    document.getElementById('p-summary').innerHTML =
+      `<h3>摘要</h3><div class="abstract">${esc(s.abstract || '')}</div>` +
+      `<h3>关键要点</h3><ul>${(s.key_points || []).map(k => `<li>${esc(k)}</li>`).join('')}</ul>` +
+      `<h3>待办事项</h3><ul>${(s.todos || []).map(t => `<li>${esc(t.task)}${t.owner ? `（${esc(t.owner)}）` : ''}</li>`).join('') || '<li>无</li>'}</ul>` +
+      ((s.quotes || []).length ? `<h3>原话摘录</h3><ul>${s.quotes.map(q => `<li>"${esc(q)}"</li>`).join('')}</ul>` : '');
+  }
+  if (rec.status !== 'done') setTimeout(load, 2500);
+  else if (!document.getElementById('p-mindmap').hidden) renderMindmap();
+}
+
+function renderMindmap() {
+  if (mmRendered || !rec || !rec.mindmap) return;
+  const { Transformer } = window.markmap;
+  const { root } = new Transformer().transform(rec.mindmap);
+  window.markmap.Markmap.create('#mindmap', { autoFit: true }, root);
+  mmRendered = true;
+}
+
+async function reprocess() {
+  await fetch(`/api/recordings/${id}/reprocess`, { method: 'POST' });
+  mmRendered = false;
+  document.getElementById('p-transcript').innerHTML = '<div class="status">重新处理中…</div>';
+  load();
+}
+
+load();
+</script>
+</body>
+</html>

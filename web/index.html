@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回声笔记 EchoNote</title>
+<style>
+  :root { --accent: #2e5a88; --bg: #f5f7fa; --card: #fff; --text: #1f2933; --muted: #7b8794; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px; }
+  h1 { font-size: 24px; color: var(--accent); }
+  h1 small { font-size: 13px; color: var(--muted); font-weight: normal; margin-left: 8px; }
+  .card { background: var(--card); border-radius: 12px; padding: 20px; margin-top: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .drop { border: 2px dashed #c3cdd8; border-radius: 10px; padding: 36px; text-align: center; color: var(--muted); cursor: pointer; transition: .15s; }
+  .drop.over, .drop:hover { border-color: var(--accent); color: var(--accent); background: #eef3f8; }
+  input[type=text] { width: 100%; padding: 10px 12px; border: 1px solid #d6dee6; border-radius: 8px; margin-top: 12px; font-size: 14px; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 22px; font-size: 14px; margin-top: 12px; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .item { display: flex; justify-content: space-between; align-items: center; padding: 14px 4px; border-bottom: 1px solid #eef1f4; cursor: pointer; }
+  .item:hover .t { color: var(--accent); }
+  .item .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
+  .b-done { background: #e3f5e9; color: #1c7c3c; }
+  .b-error { background: #fdeaea; color: #c0392b; }
+  .b-working { background: #fff4e0; color: #b26a00; }
+  .empty { color: var(--muted); text-align: center; padding: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>回声笔记 <small>录音 → 转写 → AI 总结 → 思维导图</small></h1>
+
+  <div class="card">
+    <div class="drop" id="drop">点击或拖拽上传音频文件（mp3 / m4a / wav / mp4 …）</div>
+    <input type="file" id="file" accept="audio/*,video/mp4,.m4a,.amr,.opus" hidden>
+    <input type="text" id="title" placeholder="标题（可选，留空由 AI 生成）">
+    <button id="submit" disabled>上传并开始处理</button>
+  </div>
+
+  <div class="card">
+    <div id="list"><div class="empty">暂无录音，先上传一个试试</div></div>
+  </div>
+</div>
+
+<script>
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+const submitBtn = document.getElementById('submit');
+let picked = null;
+
+drop.onclick = () => fileInput.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); pick(e.dataTransfer.files[0]); };
+fileInput.onchange = () => pick(fileInput.files[0]);
+
+function pick(f) {
+  if (!f) return;
+  picked = f;
+  drop.textContent = `已选择: ${f.name} (${(f.size / 1048576).toFixed(1)} MB)`;
+  submitBtn.disabled = false;
+}
+
+submitBtn.onclick = async () => {
+  submitBtn.disabled = true;
+  submitBtn.textContent = '上传中…';
+  const fd = new FormData();
+  fd.append('audio', picked);
+  fd.append('title', document.getElementById('title').value);
+  try {
+    const res = await fetch('/api/recordings', { method: 'POST', body: fd });
+    const rec = await res.json();
+    if (!res.ok) throw new Error(rec.error);
+    location.href = `/detail.html?id=${rec.id}`;
+  } catch (e) {
+    alert('上传失败: ' + e.message);
+    submitBtn.disabled = false;
+  }
+  submitBtn.textContent = '上传并开始处理';
+};
+
+const STATUS = {
+  uploaded: ['排队中', 'b-working'], transcribing: ['转写中', 'b-working'],
+  summarizing: ['AI 总结中', 'b-working'], done: ['完成', 'b-done'], error: ['失败', 'b-error'],
+};
+
+async function refresh() {
+  const list = await (await fetch('/api/recordings')).json();
+  const el = document.getElementById('list');
+  if (!list.length) return;
+  el.innerHTML = list.map(r => {
+    const [label, cls] = STATUS[r.status] || [r.status, ''];
+    return `<div class="item" onclick="location.href='/detail.html?id=${r.id}'">
+      <div><div class="t">${r.title || r.originalName}</div>
+      <div class="meta">${new Date(r.createdAt).toLocaleString()} · ${(r.size / 1048576).toFixed(1)} MB</div></div>
+      <span class="badge ${cls}">${label}</span></div>`;
+  }).join('');
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
