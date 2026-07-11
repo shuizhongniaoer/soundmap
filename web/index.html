@@ -35,7 +35,11 @@
     <div class="drop" id="drop">点击或拖拽上传音频文件（mp3 / m4a / wav / mp4 …）</div>
     <input type="file" id="file" accept="audio/*,video/mp4,.m4a,.amr,.opus" hidden>
     <input type="text" id="title" placeholder="标题（可选，留空由 AI 生成）">
-    <button id="submit" disabled>上传并开始处理</button>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button id="submit" disabled>上传并开始处理</button>
+      <button id="recBtn" style="background:#c0392b">🎙️ 录音</button>
+      <span id="recHint" style="font-size:12px;color:var(--muted)"></span>
+    </div>
   </div>
 
   <div class="card">
@@ -61,6 +65,46 @@ function pick(f) {
   drop.textContent = `已选择: ${f.name} (${(f.size / 1048576).toFixed(1)} MB)`;
   submitBtn.disabled = false;
 }
+
+// ===== 浏览器录音（MediaRecorder）=====
+const recBtn = document.getElementById('recBtn');
+const recHint = document.getElementById('recHint');
+let mediaRecorder = null, chunks = [], recTimer = null, recStart = 0;
+
+recBtn.onclick = async () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') { mediaRecorder.stop(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return alert('当前浏览器不支持录音，或页面不是 https/localhost');
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    chunks = [];
+    mediaRecorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      clearInterval(recTimer);
+      recBtn.textContent = '🎙️ 录音';
+      recBtn.style.background = '#c0392b';
+      recHint.textContent = '';
+      const type = mediaRecorder.mimeType || 'audio/webm';
+      const ext = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : 'webm';
+      const ts = new Date();
+      const name = `录音-${ts.getMonth() + 1}月${ts.getDate()}日 ${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}.${ext}`;
+      pick(new File([new Blob(chunks, { type })], name, { type }));
+    };
+    mediaRecorder.start();
+    recStart = Date.now();
+    recBtn.style.background = '#7b8794';
+    recHint.textContent = '录音中，再次点击停止';
+    recTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - recStart) / 1000);
+      recBtn.textContent = `⏹ 停止 ${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    }, 500);
+  } catch (e) {
+    alert('无法访问麦克风: ' + e.message);
+  }
+};
 
 submitBtn.onclick = async () => {
   submitBtn.disabled = true;

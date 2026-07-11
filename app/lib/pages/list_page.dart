@@ -1,0 +1,173 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import '../api.dart';
+import 'detail_page.dart';
+import 'record_page.dart';
+
+const _statusLabel = {
+  'uploaded': '排队中',
+  'transcribing': '转写中',
+  'summarizing': 'AI 总结中',
+  'done': '完成',
+  'error': '失败',
+};
+
+class ListPage extends StatefulWidget {
+  const ListPage({super.key});
+  @override
+  State<ListPage> createState() => _ListPageState();
+}
+
+class _ListPageState extends State<ListPage> {
+  List<dynamic> _items = [];
+  String? _error;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final items = await Api.list();
+      if (mounted) setState(() { _items = items; _error = null; });
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  Future<void> _pickAndUpload() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.any);
+    final path = result?.files.single.path;
+    if (path == null) return;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('上传中…')));
+    try {
+      final rec = await Api.upload(File(path));
+      _refresh();
+      if (mounted) _openDetail(rec['id'] as String);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('上传失败: $e')));
+      }
+    }
+  }
+
+  void _openDetail(String id) {
+    Navigator.push(context,
+        MaterialPageRoute(builder: (_) => DetailPage(id: id)))
+        .then((_) => _refresh());
+  }
+
+  Future<void> _editServer() async {
+    final ctrl = TextEditingController(text: await Api.base());
+    if (!mounted) return;
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('服务器地址'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+              helperText: '模拟器: http://10.0.2.2:3000\n真机: http://电脑局域网IP:3000'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('保存')),
+        ],
+      ),
+    );
+    if (url != null && url.isNotEmpty) {
+      await Api.setBase(url);
+      _refresh();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('声图'),
+        actions: [
+          IconButton(onPressed: _pickAndUpload, icon: const Icon(Icons.upload_file)),
+          IconButton(onPressed: _editServer, icon: const Icon(Icons.settings)),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        child: _error != null
+            ? ListView(children: [
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text('连接服务器失败：$_error\n\n请检查右上角设置里的服务器地址',
+                      style: const TextStyle(color: Colors.red)),
+                )
+              ])
+            : _items.isEmpty
+                ? ListView(children: const [
+                    Padding(
+                      padding: EdgeInsets.all(48),
+                      child: Center(child: Text('暂无录音，点右下角开始录音')),
+                    )
+                  ])
+                : ListView.separated(
+                    itemCount: _items.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (ctx, i) {
+                      final r = _items[i] as Map<String, dynamic>;
+                      final status = r['status'] as String? ?? '';
+                      final done = status == 'done';
+                      final err = status == 'error';
+                      return ListTile(
+                        title: Text(r['title'] as String? ??
+                            r['originalName'] as String? ?? '未命名'),
+                        subtitle: Text((r['createdAt'] as String? ?? '')
+                            .replaceFirst('T', ' ')
+                            .split('.')
+                            .first),
+                        trailing: Chip(
+                          label: Text(_statusLabel[status] ?? status,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: err
+                                      ? Colors.red
+                                      : done
+                                          ? Colors.green.shade800
+                                          : Colors.orange.shade800)),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onTap: () => _openDetail(r['id'] as String),
+                      );
+                    },
+                  ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const RecordPage()))
+              .then((id) {
+            _refresh();
+            if (id is String) _openDetail(id);
+          });
+        },
+        icon: const Icon(Icons.mic),
+        label: const Text('录音'),
+      ),
+    );
+  }
+}

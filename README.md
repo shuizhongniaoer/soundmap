@@ -18,8 +18,9 @@ soundmap/
 │  ├─ asr/            # 转写供应商抽象（dashscope / mock）
 │  └─ llm/            # LLM 抽象 + Prompt 模板（dashscope / mock）
 ├─ web/
-│  ├─ index.html      # 上传 + 录音列表
+│  ├─ index.html      # 浏览器录音 + 上传 + 录音列表
 │  └─ detail.html     # 转写稿(可编辑) / AI 总结 / 思维导图 三 Tab + 导出
+├─ app/               # Flutter App（安卓优先，见 app/README.md）
 └─ docs/              # 产品与技术设计文档
 ```
 
@@ -65,8 +66,8 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 
 ## 路线图（详见设计文档第 7 章）
 
-- [x] Phase 0：Web 最小闭环 + 编辑修正 + 导出（当前状态）
-- [ ] Phase 1：Flutter App（iOS/Android）+ 账号与同步 + PostgreSQL/队列
+- [x] Phase 0：Web 最小闭环 + 浏览器录音 + 编辑修正 + 导出
+- [ ] Phase 1：Flutter App（安卓优先，app/ 已有 MVP：录音/上传/列表/详情）+ 账号与同步 + PostgreSQL/队列
 - [ ] Phase 2：安卓通话录音自动导入、iOS Share Extension、自定义模板、分享页
 - [ ] Phase 3：会员体系 + 三端支付 + 国内外双站部署
 - [ ] Phase 4：实时转写、跨录音 RAG 问答、会议 Bot、团队版

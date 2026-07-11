@@ -1,0 +1,16 @@
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+.idea/
+*.iml
+# flutter create 生成的平台工程先不入库，跑通后如需 CI 再提交
+android/
+ios/
+macos/
+linux/
+windows/
+web/
+test/
+analysis_options.yaml
+.metadata
