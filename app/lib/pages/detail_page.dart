@@ -42,26 +42,31 @@ class _DetailPageState extends State<DetailPage> {
     } catch (_) {}
   }
 
-  void _maybeRenderMindmap() {
+  Future<void> _maybeRenderMindmap() async {
     final md = _rec?['mindmap'] as String?;
     if (md == null || md == _mmLoaded) return;
     _mmLoaded = md;
+    // 渲染库由我们自己的服务器托管（/web/vendor），不依赖公网 CDN
+    final base = await Api.base();
     final html = '''
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>html,body,#mm{margin:0;width:100%;height:100%}</style></head>
 <body><svg id="mm"></svg>
-<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-<script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.4/dist/browser/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.4/dist/browser/index.js"></script>
+<script src="$base/vendor/d3.min.js"></script>
+<script src="$base/vendor/markmap-lib.js"></script>
+<script src="$base/vendor/markmap-view.js"></script>
 <script>
-const md = ${jsonEncode(md)};
-const { root } = new window.markmap.Transformer().transform(md);
-window.markmap.Markmap.create('#mm', { autoFit: true }, root);
+window.onload = function() {
+  const md = ${jsonEncode(md)};
+  const { root } = new window.markmap.Transformer().transform(md);
+  window.markmap.Markmap.create('#mm', { autoFit: true }, root);
+};
 </script></body></html>''';
     _mmController ??= WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted);
-    _mmController!.loadHtmlString(html);
+    // baseUrl 用服务器地址，保证 http 明文加载策略一致
+    await _mmController!.loadHtmlString(html, baseUrl: base);
   }
 
   @override
