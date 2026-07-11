@@ -36,10 +36,12 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 // 上传录音 -> 创建记录并触发处理管线
 app.post('/api/recordings', upload.single('audio'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '缺少音频文件（字段名 audio）' });
+  // multer 按 latin1 解码 originalname，中文文件名需转回 utf8
+  const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
   const rec = store.create({
     id: crypto.randomUUID(),
     title: (req.body.title || '').trim() || null,
-    originalName: req.file.originalname,
+    originalName,
     filename: req.file.filename,
     size: req.file.size,
     status: 'uploaded',
@@ -59,13 +61,40 @@ app.get('/api/recordings/:id', (req, res) => {
   res.json(rec);
 });
 
-// 重新生成（转写结果保留时只重跑 LLM；无转写则整条重跑）
+// 重新生成（有转写稿时只重跑 LLM，不重复付费转写；加 ?full=1 强制重新转写）
 app.post('/api/recordings/:id/reprocess', (req, res) => {
   const rec = store.get(req.params.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
-  store.update(rec.id, { status: 'uploaded', error: null });
+  const patch = { status: 'uploaded', error: null };
+  if (req.query.full === '1') patch.transcript = null;
+  store.update(rec.id, patch);
   pipeline.process(rec.id);
   res.json({ ok: true });
+});
+
+// 批量重命名说话人（"说话人2" -> "张总"）
+app.patch('/api/recordings/:id/speakers', (req, res) => {
+  const { from, to } = req.body || {};
+  const rec = store.get(req.params.id);
+  if (!rec || !rec.transcript) return res.status(404).json({ error: 'not found' });
+  if (!from || !to || !String(to).trim()) return res.status(400).json({ error: '缺少 from/to' });
+  let count = 0;
+  rec.transcript.segments.forEach(s => { if (s.speaker === from) { s.speaker = String(to).trim(); count++; } });
+  store.update(rec.id, { transcript: rec.transcript });
+  res.json({ ok: true, count });
+});
+
+// 修改单句：说话人 和/或 文字内容
+app.patch('/api/recordings/:id/segments/:idx', (req, res) => {
+  const rec = store.get(req.params.id);
+  if (!rec || !rec.transcript) return res.status(404).json({ error: 'not found' });
+  const seg = rec.transcript.segments[Number(req.params.idx)];
+  if (!seg) return res.status(404).json({ error: 'segment not found' });
+  const { speaker, text } = req.body || {};
+  if (speaker != null && String(speaker).trim()) seg.speaker = String(speaker).trim();
+  if (text != null && String(text).trim()) seg.text = String(text).trim();
+  store.update(rec.id, { transcript: rec.transcript });
+  res.json({ ok: true, segment: seg });
 });
 
 app.use((err, req, res, next) => {

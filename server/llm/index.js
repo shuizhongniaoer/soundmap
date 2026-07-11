@@ -19,7 +19,13 @@ async function chat(messages, { json = false } = {}) {
       ...(json ? { response_format: { type: 'json_object' } } : {}),
     }),
   });
-  const body = await res.json();
+  const text = await res.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new Error(`LLM 返回了非 JSON 响应 (HTTP ${res.status}): ${text.slice(0, 300) || '(空响应)'} —— 请检查 DASHSCOPE_BASE_URL 是否正确`);
+  }
   if (!res.ok) throw new Error(`LLM ${res.status}: ${JSON.stringify(body)}`);
   return body.choices[0].message.content;
 }

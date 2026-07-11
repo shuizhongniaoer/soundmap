@@ -17,8 +17,16 @@
   .tab.on { background: var(--card); color: var(--accent); font-weight: 600; }
   .panel { background: var(--card); border-radius: 0 12px 12px 12px; padding: 22px; min-height: 380px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
   .seg { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0f3f6; font-size: 14px; line-height: 1.7; }
-  .seg .who { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .seg .who { color: var(--accent); font-weight: 600; white-space: nowrap; cursor: pointer; }
+  .seg .who:hover { text-decoration: underline; }
+  .seg .txt { flex: 1; cursor: text; border-radius: 4px; padding: 0 4px; }
+  .seg .txt:hover { background: #f2f6fa; }
+  .seg .txt[contenteditable="true"] { background: #fffbe8; outline: 2px solid #e2c46d; }
   .seg .ts { color: var(--muted); font-size: 12px; white-space: nowrap; padding-top: 3px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-bottom: 12px; margin-bottom: 8px; border-bottom: 1px solid #e4e9ef; }
+  .chip { background: #eef3f8; color: var(--accent); border-radius: 20px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
+  .chip:hover { background: #dbe7f2; }
+  .hint { font-size: 12px; color: var(--muted); }
   h3 { color: var(--accent); font-size: 15px; margin: 18px 0 8px; }
   h3:first-child { margin-top: 0; }
   ul { padding-left: 22px; line-height: 1.9; font-size: 14px; }
@@ -78,11 +86,7 @@ async function load() {
     tEl.innerHTML = `<div class="status err">处理失败：${esc(rec.error || '')}</div>`;
     return;
   }
-  if (rec.transcript) {
-    tEl.innerHTML = rec.transcript.segments.map(s =>
-      `<div class="seg"><span class="ts">${fmt(s.start)}</span><span class="who">${esc(s.speaker)}</span><span>${esc(s.text)}</span></div>`
-    ).join('');
-  }
+  if (rec.transcript) renderTranscript();
   if (rec.summary) {
     const s = rec.summary;
     document.getElementById('p-summary').innerHTML =
@@ -95,8 +99,70 @@ async function load() {
   else if (!document.getElementById('p-mindmap').hidden) renderMindmap();
 }
 
+function renderTranscript() {
+  const tEl = document.getElementById('p-transcript');
+  const segs = rec.transcript.segments;
+  const speakers = [...new Set(segs.map(s => s.speaker))];
+  tEl.innerHTML =
+    `<div class="chips">${speakers.map(sp => `<span class="chip" data-sp="${esc(sp)}">${esc(sp)} ✏️</span>`).join('')}
+     <span class="hint">点名字批量重命名 · 点每句前的说话人单独修改 · 点文字直接改错字</span></div>` +
+    segs.map((s, i) =>
+      `<div class="seg"><span class="ts">${fmt(s.start)}</span><span class="who" data-i="${i}" title="修改这句的说话人">${esc(s.speaker)}</span><span class="txt" data-i="${i}" title="点击修改文字">${esc(s.text)}</span></div>`
+    ).join('');
+  tEl.querySelectorAll('.chip').forEach(c => c.onclick = () => renameSpeaker(c.dataset.sp));
+  tEl.querySelectorAll('.who').forEach(w => w.onclick = () => editSegSpeaker(+w.dataset.i));
+  tEl.querySelectorAll('.txt').forEach(t => t.onclick = () => editSegText(t, +t.dataset.i));
+}
+
+async function patchJSON(url, body) {
+  const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) alert('保存失败: ' + (await res.json()).error);
+  return res.ok;
+}
+
+async function renameSpeaker(from) {
+  const to = prompt(`把「${from}」的所有发言批量改为：`, from);
+  if (!to || to.trim() === from) return;
+  if (await patchJSON(`/api/recordings/${id}/speakers`, { from, to: to.trim() })) afterEdit(true);
+}
+
+async function editSegSpeaker(i) {
+  const cur = rec.transcript.segments[i].speaker;
+  const to = prompt('这句话的说话人改为：', cur);
+  if (!to || to.trim() === cur) return;
+  if (await patchJSON(`/api/recordings/${id}/segments/${i}`, { speaker: to.trim() })) afterEdit(true);
+}
+
+function editSegText(el, i) {
+  if (el.isContentEditable) return;
+  const orig = rec.transcript.segments[i].text;
+  el.contentEditable = 'true';
+  el.focus();
+  const finish = async save => {
+    el.contentEditable = 'false';
+    const now = el.textContent.trim();
+    if (!save || !now || now === orig) { el.textContent = orig; return; }
+    if (await patchJSON(`/api/recordings/${id}/segments/${i}`, { text: now })) {
+      rec.transcript.segments[i].text = now;
+      dirty = true;
+    } else el.textContent = orig;
+  };
+  el.onblur = () => finish(true);
+  el.onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+    if (e.key === 'Escape') { el.onblur = null; finish(false); }
+  };
+}
+
+let dirty = false;
+async function afterEdit(askRegen) {
+  await load();
+  if (askRegen && confirm('已保存。要用修改后的内容重新生成总结和思维导图吗？\n（只重跑 AI 总结，不会重新转写、不产生转写费用）')) reprocess();
+}
+
 function renderMindmap() {
   if (mmRendered || !rec || !rec.mindmap) return;
+  document.getElementById('mindmap').innerHTML = '';
   const { Transformer } = window.markmap;
   const { root } = new Transformer().transform(rec.mindmap);
   window.markmap.Markmap.create('#mindmap', { autoFit: true }, root);

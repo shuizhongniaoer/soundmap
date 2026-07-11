@@ -14,7 +14,13 @@ async function dsFetch(url, options = {}) {
       ...options.headers,
     },
   });
-  const body = await res.json();
+  const text = await res.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new Error(`DashScope 返回了非 JSON 响应 (HTTP ${res.status}): ${text.slice(0, 300) || '(空响应)'} —— 请检查 DASHSCOPE_BASE_URL 是否正确`);
+  }
   if (!res.ok) throw new Error(`DashScope ${res.status}: ${JSON.stringify(body)}`);
   return body;
 }
@@ -57,7 +63,9 @@ module.exports = {
     }
 
     // 3. 拉取转写结果 JSON 并归一化
-    const detail = await (await fetch(item.transcription_url)).json();
+    const detailRes = await fetch(item.transcription_url);
+    if (!detailRes.ok) throw new Error(`拉取转写结果失败 (HTTP ${detailRes.status})`);
+    const detail = await detailRes.json();
     const segments = [];
     for (const tr of detail.transcripts || []) {
       for (const s of tr.sentences || []) {
