@@ -4,8 +4,7 @@
 build/
 .idea/
 *.iml
-# flutter create 生成的平台工程先不入库，跑通后如需 CI 再提交
-android/
+# android/ 已入库（含 compileSdk/权限定制）；其余平台工程跑通后再提交
 ios/
 macos/
 linux/
