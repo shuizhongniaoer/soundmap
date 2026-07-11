@@ -30,7 +30,7 @@ async function buildDocx(rec) {
     spacing: { after: 100 },
     children: [new TextRun({ text: title, font: FONT, size: 40, bold: true, color: ACCENT })],
   }));
-  children.push(p(`${new Date(rec.createdAt).toLocaleString('zh-CN')} · 由回声笔记 EchoNote 生成`, { size: 18, color: '888888' }));
+  children.push(p(`${new Date(rec.createdAt).toLocaleString('zh-CN')} · 由声图 SoundMap 生成`, { size: 18, color: '888888' }));
 
   const s = rec.summary;
   if (s) {

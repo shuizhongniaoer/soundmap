@@ -1,7 +1,7 @@
 {
-  "name": "echonote",
+  "name": "soundmap",
   "version": "0.1.0",
-  "description": "回声笔记 EchoNote — 录音/上传 -> 转写 -> AI 总结 -> 思维导图",
+  "description": "声图 SoundMap — 录音/上传 -> 转写 -> AI 总结 -> 思维导图",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",

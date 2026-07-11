@@ -118,6 +118,6 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`回声笔记 EchoNote 已启动: http://localhost:${PORT}`);
+  console.log(`声图 SoundMap 已启动: http://localhost:${PORT}`);
   console.log(`ASR provider: ${require('./asr').name} | LLM provider: ${require('./llm').name}`);
 });
