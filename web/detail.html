@@ -40,9 +40,12 @@
 <body>
 <div class="wrap">
   <a class="back" href="/">← 返回列表</a>
-  <div style="display:flex;justify-content:space-between;align-items:center">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
     <h1 id="title">加载中…</h1>
-    <button class="re" onclick="reprocess()">重新生成</button>
+    <div style="display:flex;gap:8px;flex-shrink:0">
+      <button class="re" onclick="exportWord()">导出 Word</button>
+      <button class="re" onclick="reprocess()">重新生成</button>
+    </div>
   </div>
   <audio id="player" controls preload="none"></audio>
 
@@ -54,7 +57,13 @@
   <div class="panel">
     <div id="p-transcript"><div class="status">处理中…</div></div>
     <div id="p-summary" hidden></div>
-    <div id="p-mindmap" hidden><svg id="mindmap"></svg></div>
+    <div id="p-mindmap" hidden>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="re" onclick="exportMindmapPNG()">导出图片 PNG</button>
+        <button class="re" onclick="exportMindmapMD()">导出 Markdown</button>
+      </div>
+      <svg id="mindmap"></svg>
+    </div>
   </div>
 </div>
 
@@ -167,6 +176,67 @@ function renderMindmap() {
   const { root } = new Transformer().transform(rec.mindmap);
   window.markmap.Markmap.create('#mindmap', { autoFit: true }, root);
   mmRendered = true;
+}
+
+function download(url, name) {
+  const a = document.createElement('a');
+  a.href = url;
+  if (name) a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function exportWord() {
+  location.href = `/api/recordings/${id}/export/docx`;
+}
+
+function exportMindmapMD() {
+  if (!rec || !rec.mindmap) return alert('思维导图还没生成');
+  const blob = new Blob([rec.mindmap], { type: 'text/markdown;charset=utf-8' });
+  download(URL.createObjectURL(blob), `${rec.title || '思维导图'}.md`);
+}
+
+async function exportMindmapPNG() {
+  if (!mmRendered) renderMindmap();
+  if (!rec || !rec.mindmap) return alert('思维导图还没生成');
+  const svg = document.getElementById('mindmap');
+  const box = svg.getBoundingClientRect();
+  const clone = svg.cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('width', box.width);
+  clone.setAttribute('height', box.height);
+  // 把页面里 markmap 相关样式内联进 SVG，避免导出后丢样式
+  let css = 'foreignObject div{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}';
+  for (const sheet of document.styleSheets) {
+    try {
+      for (const rule of sheet.cssRules) if (/markmap|mm-/.test(rule.cssText)) css += rule.cssText;
+    } catch {} // 跨域样式表跳过
+  }
+  const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  styleEl.textContent = css;
+  clone.insertBefore(styleEl, clone.firstChild);
+
+  const svgBlob = new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml;charset=utf-8' });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  const img = new Image();
+  try {
+    await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail; img.src = svgUrl; });
+    const scale = 2; // 2x 高清导出
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(box.width * scale);
+    canvas.height = Math.round(box.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(b => download(URL.createObjectURL(b), `${rec.title || '思维导图'}.png`), 'image/png');
+  } catch {
+    alert('PNG 导出失败，已改为下载 SVG 矢量图');
+    download(svgUrl, `${rec.title || '思维导图'}.svg`);
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(svgUrl), 10000);
+  }
 }
 
 async function reprocess() {

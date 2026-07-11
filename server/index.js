@@ -7,6 +7,7 @@ const multer = require('multer');
 
 const store = require('./store');
 const pipeline = require('./pipeline');
+const { buildDocx } = require('./export');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -95,6 +96,21 @@ app.patch('/api/recordings/:id/segments/:idx', (req, res) => {
   if (text != null && String(text).trim()) seg.text = String(text).trim();
   store.update(rec.id, { transcript: rec.transcript });
   res.json({ ok: true, segment: seg });
+});
+
+// 导出 Word（总结 + 思维导图大纲 + 转写稿全文）
+app.get('/api/recordings/:id/export/docx', async (req, res) => {
+  const rec = store.get(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'not found' });
+  try {
+    const buf = await buildDocx(rec);
+    const name = `${(rec.title || rec.originalName || '录音记录').replace(/[/\\:*?"<>|]/g, '_')}.docx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="export.docx"; filename*=UTF-8''${encodeURIComponent(name)}`);
+    res.send(buf);
+  } catch (e) {
+    res.status(500).json({ error: '导出失败: ' + e.message });
+  }
 });
 
 app.use((err, req, res, next) => {
