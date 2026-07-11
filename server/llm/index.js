@@ -3,7 +3,8 @@
 // mindmap(segments, title)   -> Markdown 大纲字符串
 const prompts = require('./prompts');
 
-const OPENAI_COMPAT_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
+const OPENAI_COMPAT_URL = `${HOST}/compatible-mode/v1/chat/completions`;
 
 async function chat(messages, { json = false } = {}) {
   const res = await fetch(OPENAI_COMPAT_URL, {

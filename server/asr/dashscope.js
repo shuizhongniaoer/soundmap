@@ -2,7 +2,8 @@
 // 文档: https://help.aliyun.com/zh/model-studio/recording-file-recognition
 // 注意: file_urls 必须可公网访问。本地开发需配置 PUBLIC_BASE_URL（ngrok/cpolar 等），
 //       生产环境上传 OSS 后用 OSS URL。
-const BASE = 'https://dashscope.aliyuncs.com/api/v1';
+const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
+const BASE = `${HOST}/api/v1`;
 
 async function dsFetch(url, options = {}) {
   const res = await fetch(url, {
