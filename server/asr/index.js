@@ -13,8 +13,8 @@ function resolveProvider() {
     return dashscope;
   }
   if (want === 'xfyun') {
-    if (!process.env.XFYUN_APPID || !process.env.XFYUN_SECRET_KEY) {
-      console.warn('[asr] ASR_PROVIDER=xfyun 但未配置 XFYUN_APPID/XFYUN_SECRET_KEY，降级为 mock');
+    if (!process.env.XFYUN_APPID || !process.env.XFYUN_API_KEY || !process.env.XFYUN_API_SECRET) {
+      console.warn('[asr] ASR_PROVIDER=xfyun 但未配置 XFYUN_APPID/XFYUN_API_KEY/XFYUN_API_SECRET，降级为 mock');
       return mock;
     }
     return xfyun;

@@ -1,56 +1,75 @@
-// 讯飞语音转写（录音文件转写标准版 LFASR v2）
-// 文档: https://www.xfyun.cn/doc/asr/ifasr_new/API.html
-// 优势：直接上传文件（无需公网 URL）；roleType=1 说话人分离；hotWord 参数直传热词
+// 讯飞·录音文件转写大模型（支持中英+202种方言免切换识别）
+// 文档: https://www.xfyun.cn/doc/spark/asr_llm/Ifasr_llm.html
+// 鉴权：signature 放请求头，HMAC-SHA1(按参数名排序的 key=urlencode(value) 串, APISecret)
+// 凭证：控制台"录音文件转写大模型"页的 APPID / APIKey(accessKeyId) / APISecret
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const HOST = 'https://raasr.xfyun.cn/v2/api';
+const HOST = 'https://office-api-ist-dx.iflyaisol.com';
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
 
-function authParams() {
+function creds() {
   const appId = (process.env.XFYUN_APPID || '').trim();
-  const secretKey = (process.env.XFYUN_SECRET_KEY || '').trim();
-  if (!appId || !secretKey) throw new Error('缺少 XFYUN_APPID / XFYUN_SECRET_KEY');
-  const ts = Math.floor(Date.now() / 1000).toString();
-  const md5 = crypto.createHash('md5').update(appId + ts).digest('hex');
-  const signa = crypto.createHmac('sha1', secretKey).update(md5).digest('base64');
-  return { appId, ts, signa };
+  const apiKey = (process.env.XFYUN_API_KEY || '').trim();
+  const apiSecret = (process.env.XFYUN_API_SECRET || '').trim();
+  if (!appId || !apiKey || !apiSecret) throw new Error('缺少 XFYUN_APPID / XFYUN_API_KEY / XFYUN_API_SECRET');
+  return { appId, apiKey, apiSecret };
 }
 
-// 我们库里的热词 -> 讯飞 hotWord 参数（"词1|词2"，单词 2~16 字，最多 200 个）
-function hotWordParam() {
-  try {
-    const words = (require('../store').getMeta('hotwords') || [])
-      .filter(w => w.length >= 2 && w.length <= 16)
-      .slice(0, 200);
-    return words.length ? { hotWord: words.join('|') } : {};
-  } catch {
-    return {};
-  }
+function dateTimeStr() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}${sign}${p(Math.floor(Math.abs(off) / 60))}${p(Math.abs(off) % 60)}`;
 }
 
-async function xfFetch(pathname, query, body) {
-  const qs = new URLSearchParams(query).toString();
-  const res = await fetch(`${HOST}${pathname}?${qs}`, {
+function random16() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  return Array.from(crypto.randomBytes(16)).map(b => chars[b % chars.length]).join('');
+}
+
+// 按参数名自然排序，value 做 URL 编码，key=value 用 & 连接，HMAC-SHA1 后 base64
+function sign(params, secret) {
+  const base = Object.keys(params)
+    .filter(k => k !== 'signature' && params[k] !== '' && params[k] != null)
+    .sort()
+    .map(k => `${k}=${encodeURIComponent(String(params[k]))}`)
+    .join('&');
+  return crypto.createHmac('sha1', secret).update(base, 'utf8').digest('base64');
+}
+
+function qs(params) {
+  return Object.keys(params)
+    .filter(k => params[k] !== '' && params[k] != null)
+    .map(k => `${k}=${encodeURIComponent(String(params[k]))}`)
+    .join('&');
+}
+
+async function xfFetch(pathname, params, { body, contentType }) {
+  const { apiSecret } = creds();
+  const signature = sign(params, apiSecret);
+  const res = await fetch(`${HOST}${pathname}?${qs(params)}`, {
     method: 'POST',
-    ...(body ? { headers: { 'Content-Type': 'application/octet-stream' }, body } : {}),
+    headers: { 'Content-Type': contentType, signature },
+    body,
   });
   const text = await res.text();
   let out;
   try { out = JSON.parse(text); } catch {
     throw new Error(`讯飞接口返回非 JSON (HTTP ${res.status}): ${text.slice(0, 200)}`);
   }
-  if (out.code !== '000000') {
+  if (String(out.code) !== '000000') {
     let hint = '';
-    if (out.code === '26601') hint = '（检查 XFYUN_APPID 是否正确、该应用是否已开通"语音转写"服务、SecretKey 是否是语音转写页面的那个）';
-    if (out.code === '26625' || out.code === '26633') hint = '（免费时长不足，去控制台语音转写页领取或购买）';
+    if (String(out.code) === '100009') hint = '（签名校验不通过，检查 APIKey/APISecret 是否是"录音文件转写大模型"页面的）';
+    if (String(out.code) === '000002') hint = '（accessKeyId 不存在，检查 XFYUN_API_KEY）';
     throw new Error(`讯飞接口错误 ${out.code}: ${out.descInfo || JSON.stringify(out)}${hint}`);
   }
   return out.content;
 }
 
-// 解析讯飞 lattice 结果为统一 segments 格式
+// 解析 lattice 结果为统一 segments 格式
 function parseResult(orderResultStr) {
   const or = JSON.parse(orderResultStr);
   const segments = [];
@@ -59,7 +78,7 @@ function parseResult(orderResultStr) {
     const text = (st.rt || [])
       .flatMap(r => r.ws || [])
       .flatMap(w => w.cw || [])
-      .filter(c => c.wp !== 'g') // 分段标记不是文字
+      .filter(c => c.wp !== 'g')
       .map(c => c.w)
       .join('');
     if (!text.trim()) continue;
@@ -76,26 +95,36 @@ function parseResult(orderResultStr) {
 module.exports = {
   name: 'xfyun',
   async transcribe({ filename }) {
+    const { appId, apiKey } = creds();
     const filePath = path.join(UPLOAD_DIR, filename);
     const data = fs.readFileSync(filePath);
+    const signatureRandom = random16(); // upload 与 getResult 需使用同一随机串
 
-    // 1. 上传（直接传文件二进制，无需公网 URL；热词随单携带）
-    const up = await xfFetch('/upload', {
-      ...authParams(),
+    // 1. 上传（支持 mp3/wav/pcm/opus/flac/ogg，不支持 m4a——管线已统一转 mp3）
+    const up = await xfFetch('/v2/upload', {
+      appId,
+      accessKeyId: apiKey,
+      dateTime: dateTimeStr(),
+      signatureRandom,
       fileName: filename,
-      fileSize: data.length,
-      duration: '60',
-      roleType: '1',
-      language: 'cn',
-      ...hotWordParam(),
-    }, data);
+      fileSize: String(data.length),
+      durationCheckDisable: 'true',
+      language: 'autodialect', // 中英 + 202 种方言免切换
+      roleType: '1',           // 说话人分离
+    }, { body: data, contentType: 'application/octet-stream' });
     const orderId = up.orderId;
     if (!orderId) throw new Error('讯飞上传未返回 orderId');
 
-    // 2. 轮询结果（最长 10 分钟；官方限制查询不超过 100 次）
+    // 2. 轮询结果
     for (let i = 0; i < 90; i++) {
       await new Promise(r => setTimeout(r, 6000));
-      const c = await xfFetch('/getResult', { ...authParams(), orderId, resultType: 'transfer' }, null);
+      const c = await xfFetch('/v2/getResult', {
+        accessKeyId: apiKey,
+        dateTime: dateTimeStr(),
+        signatureRandom,
+        orderId,
+        resultType: 'transfer',
+      }, { body: '{}', contentType: 'application/json' });
       const status = c.orderInfo && c.orderInfo.status;
       if (status === 4) return { language: 'zh', segments: parseResult(c.orderResult) };
       if (status === -1) throw new Error(`讯飞转写失败 failType=${c.orderInfo.failType}（1上传失败/2转码失败/3识别失败/5时长校验失败/6静音文件）`);

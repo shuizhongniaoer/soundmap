@@ -18,15 +18,16 @@ function hasFfmpeg() {
   return ffmpegOk;
 }
 
-// 说话人分离仅支持单声道；立体声/低码率会伤识别。转写前统一转 16kHz 单声道。
+// 说话人分离仅支持单声道；立体声/低码率会伤识别。
+// 转写前统一转 16kHz 单声道 mp3（百炼与讯飞大模型版格式交集，m4a 讯飞不支持）。
 function preprocess(filename) {
   if (!hasFfmpeg()) return filename;
   const src = path.join(UPLOAD_DIR, filename);
-  const outName = filename.replace(/\.[^.]+$/, '') + '.asr.m4a';
+  const outName = filename.replace(/\.[^.]+$/, '') + '.asr.mp3';
   const out = path.join(UPLOAD_DIR, outName);
   try {
     if (!fs.existsSync(out)) {
-      execFileSync('ffmpeg', ['-y', '-i', src, '-ac', '1', '-ar', '16000', '-b:a', '96k', out], { stdio: 'ignore' });
+      execFileSync('ffmpeg', ['-y', '-i', src, '-ac', '1', '-ar', '16000', '-b:a', '64k', out], { stdio: 'ignore' });
     }
     return outName;
   } catch (e) {
