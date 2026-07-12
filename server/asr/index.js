@@ -1,6 +1,7 @@
 // ASR 供应商抽象层：统一返回 { language, segments: [{ start, end, speaker, text }] }
 const mock = require('./mock');
 const dashscope = require('./dashscope');
+const xfyun = require('./xfyun');
 
 function resolveProvider() {
   const want = (process.env.ASR_PROVIDER || 'mock').toLowerCase();
@@ -10,6 +11,13 @@ function resolveProvider() {
       return mock;
     }
     return dashscope;
+  }
+  if (want === 'xfyun') {
+    if (!process.env.XFYUN_APPID || !process.env.XFYUN_SECRET_KEY) {
+      console.warn('[asr] ASR_PROVIDER=xfyun 但未配置 XFYUN_APPID/XFYUN_SECRET_KEY，降级为 mock');
+      return mock;
+    }
+    return xfyun;
   }
   return mock;
 }
