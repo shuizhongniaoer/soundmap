@@ -99,9 +99,10 @@ async function load() {
   if (rec.summary) {
     const s = rec.summary;
     document.getElementById('p-summary').innerHTML =
+      (s.type ? `<span style="display:inline-block;background:#eef3f8;color:var(--accent);border-radius:20px;padding:3px 14px;font-size:12px;margin-bottom:6px">${esc(s.type)}</span>` : '') +
       `<h3>摘要</h3><div class="abstract">${esc(s.abstract || '')}</div>` +
       `<h3>关键要点</h3><ul>${(s.key_points || []).map(k => `<li>${esc(k)}</li>`).join('')}</ul>` +
-      `<h3>待办事项</h3><ul>${(s.todos || []).map(t => `<li>${esc(t.task)}${t.owner ? `（${esc(t.owner)}）` : ''}</li>`).join('') || '<li>无</li>'}</ul>` +
+      ((s.todos || []).length ? `<h3>待办事项</h3><ul>${s.todos.map(t => `<li>${esc(t.task)}${t.owner ? `（${esc(t.owner)}）` : ''}</li>`).join('')}</ul>` : '') +
       ((s.quotes || []).length ? `<h3>原话摘录</h3><ul>${s.quotes.map(q => `<li>"${esc(q)}"</li>`).join('')}</ul>` : '');
   }
   if (rec.status !== 'done') setTimeout(load, 2500);

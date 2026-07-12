@@ -174,6 +174,15 @@ window.onload = function() {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (s['type'] != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Chip(
+              label: Text(s['type'] as String,
+                  style: const TextStyle(fontSize: 12)),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
         h('摘要'),
         Container(
           padding: const EdgeInsets.all(12),
