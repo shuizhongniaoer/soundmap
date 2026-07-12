@@ -41,10 +41,15 @@ class _RecordPageState extends State<RecordPage> {
     final dir = await getApplicationDocumentsDirectory();
     _path =
         '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    // 单声道 + 96k：说话人分离仅支持单声道，码率给足提升识别质量
+    // 单声道（说话人分离要求）；码率按用户设置：标准 96k / 高音质 192k@48kHz
+    final sp = await SharedPreferences.getInstance();
+    final high = (sp.getString('rec_quality') ?? 'standard') == 'high';
     await _recorder.start(
-        const RecordConfig(
-            encoder: AudioEncoder.aacLc, bitRate: 96000, numChannels: 1),
+        RecordConfig(
+            encoder: AudioEncoder.aacLc,
+            bitRate: high ? 192000 : 96000,
+            sampleRate: high ? 48000 : 44100,
+            numChannels: 1),
         path: _path!);
     setState(() { _recording = true; _seconds = 0; });
     _timer = Timer.periodic(

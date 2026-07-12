@@ -146,22 +146,52 @@ class _ListPageState extends State<ListPage> {
 
   Future<void> _editServer() async {
     final ctrl = TextEditingController(text: await Api.base());
+    final sp = await SharedPreferences.getInstance();
+    var quality = sp.getString('rec_quality') ?? 'standard';
     if (!mounted) return;
     final url = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('服务器地址'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(
-              helperText: '模拟器: http://10.0.2.2:3000\n真机: http://电脑局域网IP:3000'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('设置'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: ctrl,
+                decoration: const InputDecoration(
+                    labelText: '服务器地址',
+                    helperText: '模拟器: http://10.0.2.2:3000\n真机: http://电脑局域网IP:3000'),
+              ),
+              const SizedBox(height: 12),
+              RadioListTile<String>(
+                title: const Text('标准音质'),
+                subtitle: const Text('96kbps 单声道，省流量'),
+                value: 'standard',
+                groupValue: quality,
+                dense: true,
+                onChanged: (v) => setDlg(() => quality = v!),
+              ),
+              RadioListTile<String>(
+                title: const Text('高音质'),
+                subtitle: const Text('192kbps / 48kHz，文件约大一倍'),
+                value: 'high',
+                groupValue: quality,
+                dense: true,
+                onChanged: (v) => setDlg(() => quality = v!),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            FilledButton(
+                onPressed: () async {
+                  await sp.setString('rec_quality', quality);
+                  if (ctx.mounted) Navigator.pop(ctx, ctrl.text.trim());
+                },
+                child: const Text('保存')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('保存')),
-        ],
       ),
     );
     if (url != null && url.isNotEmpty) {
