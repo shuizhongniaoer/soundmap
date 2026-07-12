@@ -35,6 +35,12 @@
     <div class="drop" id="drop">点击或拖拽上传音频文件（mp3 / m4a / wav / mp4 …）</div>
     <input type="file" id="file" accept="audio/*,video/mp4,.m4a,.amr,.opus" hidden>
     <input type="text" id="title" placeholder="标题（可选，留空由 AI 生成）">
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;font-size:13px;color:var(--muted)">
+      转写引擎：
+      <label><input type="radio" name="engine" value="" checked> 默认</label>
+      <label><input type="radio" name="engine" value="xfyun"> 讯飞（长录音更准，约¥2/时）</label>
+      <label><input type="radio" name="engine" value="dashscope"> 百炼（便宜，短对话分人稳）</label>
+    </div>
     <div style="display:flex;gap:10px;align-items:center">
       <button id="submit" disabled>上传并开始处理</button>
       <button id="recBtn" style="background:#c0392b">🎙️ 录音</button>
@@ -125,6 +131,7 @@ submitBtn.onclick = async () => {
   const fd = new FormData();
   fd.append('audio', picked);
   fd.append('title', document.getElementById('title').value);
+  fd.append('asrProvider', document.querySelector('input[name=engine]:checked').value);
   try {
     const res = await fetch('/api/recordings', { method: 'POST', body: fd });
     const rec = await res.json();

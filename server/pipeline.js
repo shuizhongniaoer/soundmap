@@ -48,8 +48,9 @@ async function run(id) {
       const fileUrl = process.env.PUBLIC_BASE_URL
         ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/uploads/${encodeURIComponent(asrFile)}`
         : null;
-      transcript = await asr.transcribe({ fileUrl, filename: asrFile });
-      store.update(id, { transcript, status: 'summarizing' });
+      const provider = asr.resolve(rec.asrProvider); // 支持按录音指定引擎
+      transcript = await provider.transcribe({ fileUrl, filename: asrFile });
+      store.update(id, { transcript, status: 'summarizing', providers: { ...(rec.providers || {}), asr: provider.name } });
     } else {
       store.update(id, { status: 'summarizing' });
     }
@@ -60,14 +61,15 @@ async function run(id) {
       llm.mindmap(transcript.segments, rec.title),
     ]);
 
+    const cur = store.get(id) || {};
     store.update(id, {
       summary,
       mindmap,
       title: rec.title || summary.title,
       status: 'done',
-      providers: { asr: asr.name, llm: llm.name },
+      providers: { ...(cur.providers || {}), llm: llm.name },
     });
-    console.log(`[pipeline] ${id} 完成 (asr=${asr.name}, llm=${llm.name})`);
+    console.log(`[pipeline] ${id} 完成 (asr=${(cur.providers || {}).asr || asr.name}, llm=${llm.name})`);
   } catch (err) {
     console.error(`[pipeline] ${id} 失败:`, err.message);
     store.update(id, { status: 'error', error: err.message });
