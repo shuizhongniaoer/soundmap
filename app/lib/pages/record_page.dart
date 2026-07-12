@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
 
 class RecordPage extends StatefulWidget {
@@ -59,10 +60,16 @@ class _RecordPageState extends State<RecordPage> {
       final rec = await Api.upload(File(path ?? _path!), title: title);
       if (mounted) Navigator.pop(context, rec['id'] as String);
     } catch (e) {
+      // 上传失败：录音已在本机，加入待重试队列（列表页顶部可一键重传）
+      final sp = await SharedPreferences.getInstance();
+      final list = sp.getStringList('pending_uploads') ?? [];
+      final p = path ?? _path!;
+      if (!list.contains(p)) list.add(p);
+      await sp.setStringList('pending_uploads', list);
       if (mounted) {
         setState(() => _uploading = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('上传失败: $e（录音已保存在本机）')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('上传失败: $e（录音已保存，可在列表页重试）')));
       }
     }
   }

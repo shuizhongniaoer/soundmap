@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
 import 'detail_page.dart';
 import 'record_page.dart';
@@ -24,18 +26,88 @@ class _ListPageState extends State<ListPage> {
   List<dynamic> _items = [];
   String? _error;
   Timer? _timer;
+  StreamSubscription? _shareSub;
+  List<String> _pending = [];
 
   @override
   void initState() {
     super.initState();
     _refresh();
+    _loadPending();
     _timer = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
+    // 系统分享导入：App 运行中收到分享
+    _shareSub = ReceiveSharingIntent.instance
+        .getMediaStream()
+        .listen(_handleShared, onError: (_) {});
+    // App 因分享而被启动
+    ReceiveSharingIntent.instance.getInitialMedia().then((files) {
+      _handleShared(files);
+      ReceiveSharingIntent.instance.reset();
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _shareSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _handleShared(List<SharedMediaFile> files) async {
+    for (final f in files) {
+      await _uploadPath(f.path, fromShare: true);
+    }
+  }
+
+  Future<void> _uploadPath(String path, {bool fromShare = false}) async {
+    if (!File(path).existsSync()) return;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(fromShare ? '收到分享，上传中…' : '上传中…')));
+    }
+    try {
+      final rec = await Api.upload(File(path));
+      await _removePending(path);
+      _refresh();
+      if (mounted && fromShare) _openDetail(rec['id'] as String);
+    } catch (e) {
+      await _addPending(path);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('上传失败，已加入待重试: $e')));
+      }
+    }
+  }
+
+  // ---- 失败重试队列（本地持久化）----
+  Future<void> _loadPending() async {
+    final sp = await SharedPreferences.getInstance();
+    final list = sp.getStringList('pending_uploads') ?? [];
+    list.removeWhere((p) => !File(p).existsSync());
+    await sp.setStringList('pending_uploads', list);
+    if (mounted) setState(() => _pending = list);
+  }
+
+  Future<void> _addPending(String path) async {
+    final sp = await SharedPreferences.getInstance();
+    final list = sp.getStringList('pending_uploads') ?? [];
+    if (!list.contains(path)) list.add(path);
+    await sp.setStringList('pending_uploads', list);
+    if (mounted) setState(() => _pending = list);
+  }
+
+  Future<void> _removePending(String path) async {
+    final sp = await SharedPreferences.getInstance();
+    final list = sp.getStringList('pending_uploads') ?? [];
+    list.remove(path);
+    await sp.setStringList('pending_uploads', list);
+    if (mounted) setState(() => _pending = list);
+  }
+
+  Future<void> _retryPending() async {
+    for (final p in List<String>.from(_pending)) {
+      await _uploadPath(p);
+    }
   }
 
   Future<void> _refresh() async {
@@ -108,7 +180,16 @@ class _ListPageState extends State<ListPage> {
           IconButton(onPressed: _editServer, icon: const Icon(Icons.settings)),
         ],
       ),
-      body: RefreshIndicator(
+      body: Column(children: [
+        if (_pending.isNotEmpty)
+          MaterialBanner(
+            content: Text('有 ${_pending.length} 条录音未上传成功'),
+            leading: const Icon(Icons.cloud_off, color: Colors.orange),
+            actions: [
+              TextButton(onPressed: _retryPending, child: const Text('重试')),
+            ],
+          ),
+        Expanded(child: RefreshIndicator(
         onRefresh: _refresh,
         child: _error != null
             ? ListView(children: [
@@ -155,13 +236,15 @@ class _ListPageState extends State<ListPage> {
                       );
                     },
                   ),
-      ),
+      )),
+      ]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const RecordPage()))
               .then((id) {
             _refresh();
+            _loadPending();
             if (id is String) _openDetail(id);
           });
         },
