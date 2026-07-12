@@ -41,8 +41,10 @@ class _RecordPageState extends State<RecordPage> {
     final dir = await getApplicationDocumentsDirectory();
     _path =
         '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    // 单声道 + 96k：说话人分离仅支持单声道，码率给足提升识别质量
     await _recorder.start(
-        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 64000),
+        const RecordConfig(
+            encoder: AudioEncoder.aacLc, bitRate: 96000, numChannels: 1),
         path: _path!);
     setState(() { _recording = true; _seconds = 0; });
     _timer = Timer.periodic(

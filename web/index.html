@@ -77,7 +77,7 @@ recBtn.onclick = async () => {
     return alert('当前浏览器不支持录音，或页面不是 https/localhost');
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
     mediaRecorder = new MediaRecorder(stream);
     chunks = [];
     mediaRecorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };

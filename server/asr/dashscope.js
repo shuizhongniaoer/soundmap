@@ -42,7 +42,12 @@ module.exports = {
       body: JSON.stringify({
         model: process.env.ASR_MODEL || 'paraformer-v2',
         input: { file_urls: [fileUrl] },
-        parameters: { diarization_enabled: true, language_hints: ['zh', 'en'] },
+        parameters: {
+          diarization_enabled: true,
+          language_hints: ['zh', 'en'],
+          // 热词表：在百炼控制台创建（人名/专有名词），显著提升专名识别准确率
+          ...(process.env.ASR_VOCABULARY_ID ? { vocabulary_id: process.env.ASR_VOCABULARY_ID } : {}),
+        },
       }),
     });
     const taskId = task.output && task.output.task_id;

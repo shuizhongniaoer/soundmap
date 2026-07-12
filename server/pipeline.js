@@ -1,8 +1,39 @@
 // 异步处理管线: uploaded -> transcribing -> summarizing -> done | error
 // Phase 0 用进程内异步执行；Phase 1 换 Redis 队列 + 独立 Worker
+const path = require('path');
+const fs = require('fs');
+const { execFileSync } = require('child_process');
 const store = require('./store');
 const asr = require('./asr');
 const llm = require('./llm');
+
+const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+
+let ffmpegOk = null;
+function hasFfmpeg() {
+  if (ffmpegOk === null) {
+    try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }); ffmpegOk = true; }
+    catch { ffmpegOk = false; console.warn('[pipeline] 未检测到 ffmpeg，跳过单声道预处理（brew install ffmpeg 可提升识别与说话人分离质量）'); }
+  }
+  return ffmpegOk;
+}
+
+// 说话人分离仅支持单声道；立体声/低码率会伤识别。转写前统一转 16kHz 单声道。
+function preprocess(filename) {
+  if (!hasFfmpeg()) return filename;
+  const src = path.join(UPLOAD_DIR, filename);
+  const outName = filename.replace(/\.[^.]+$/, '') + '.asr.m4a';
+  const out = path.join(UPLOAD_DIR, outName);
+  try {
+    if (!fs.existsSync(out)) {
+      execFileSync('ffmpeg', ['-y', '-i', src, '-ac', '1', '-ar', '16000', '-b:a', '96k', out], { stdio: 'ignore' });
+    }
+    return outName;
+  } catch (e) {
+    console.warn('[pipeline] 音频预处理失败，使用原始文件:', e.message);
+    return filename;
+  }
+}
 
 async function run(id) {
   const rec = store.get(id);
@@ -12,10 +43,11 @@ async function run(id) {
     let transcript = rec.transcript;
     if (!transcript || !transcript.segments || !transcript.segments.length) {
       store.update(id, { status: 'transcribing' });
+      const asrFile = preprocess(rec.filename);
       const fileUrl = process.env.PUBLIC_BASE_URL
-        ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/uploads/${encodeURIComponent(rec.filename)}`
+        ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/uploads/${encodeURIComponent(asrFile)}`
         : null;
-      transcript = await asr.transcribe({ fileUrl, filename: rec.filename });
+      transcript = await asr.transcribe({ fileUrl, filename: asrFile });
       store.update(id, { transcript, status: 'summarizing' });
     } else {
       store.update(id, { status: 'summarizing' });
