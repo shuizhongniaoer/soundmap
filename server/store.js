@@ -39,4 +39,14 @@ module.exports = {
     save(db);
     return rec;
   },
+  // 全局键值（热词表、声纹库等设置）
+  getMeta(key) {
+    return (load().meta || {})[key];
+  },
+  setMeta(key, val) {
+    const db = load();
+    db.meta = db.meta || {};
+    db.meta[key] = val;
+    save(db);
+  },
 };

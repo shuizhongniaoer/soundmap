@@ -40,7 +40,9 @@ class Api {
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
-  static Future<void> reprocess(String id) async {
-    await http.post(Uri.parse('${await base()}/api/recordings/$id/reprocess'));
+  /// full=true 时重新转写（重新计费、应用最新热词），否则只重跑 AI 总结
+  static Future<void> reprocess(String id, {bool full = false}) async {
+    await http.post(Uri.parse(
+        '${await base()}/api/recordings/$id/reprocess${full ? '?full=1' : ''}'));
   }
 }

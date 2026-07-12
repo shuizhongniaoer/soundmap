@@ -43,6 +43,19 @@
   </div>
 
   <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">
+      <b style="color:var(--accent)">热词表</b>
+      <span style="font-size:12px;color:var(--muted)">人名、称呼、专有名词——大幅提升识别准确率；点热词可删除，保存后自动同步到百炼，下次转写生效</span>
+    </div>
+    <div id="hwChips" style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0"></div>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="hwInput" placeholder="输入热词后按回车添加（如：商筠晞）" style="margin-top:0;flex:1">
+      <button id="hwSave" style="margin-top:0">保存并同步</button>
+    </div>
+    <div id="hwStatus" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+  </div>
+
+  <div class="card">
     <div id="list"><div class="empty">暂无录音，先上传一个试试</div></div>
   </div>
 </div>
@@ -123,6 +136,49 @@ submitBtn.onclick = async () => {
   }
   submitBtn.textContent = '上传并开始处理';
 };
+
+// ===== 热词表管理 =====
+let hwWords = [];
+const hwChips = document.getElementById('hwChips');
+const hwInput = document.getElementById('hwInput');
+const hwStatus = document.getElementById('hwStatus');
+
+function renderHw() {
+  hwChips.innerHTML = hwWords.length
+    ? hwWords.map((w, i) =>
+        `<span data-i="${i}" style="background:#eef3f8;color:var(--accent);border-radius:20px;padding:4px 14px;font-size:13px;cursor:pointer" title="点击删除">${w} ×</span>`
+      ).join('')
+    : '<span style="font-size:13px;color:var(--muted)">暂无热词</span>';
+  hwChips.querySelectorAll('span[data-i]').forEach(c =>
+    c.onclick = () => { hwWords.splice(+c.dataset.i, 1); renderHw(); });
+}
+
+hwInput.onkeydown = e => {
+  if (e.key !== 'Enter') return;
+  const w = hwInput.value.trim();
+  if (w && !hwWords.includes(w)) { hwWords.push(w); renderHw(); }
+  hwInput.value = '';
+};
+
+document.getElementById('hwSave').onclick = async () => {
+  if (hwInput.value.trim()) { hwInput.onkeydown({ key: 'Enter' }); }
+  hwStatus.textContent = '同步中…';
+  const res = await fetch('/api/hotwords', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ words: hwWords }),
+  });
+  const body = await res.json();
+  hwStatus.textContent = res.ok
+    ? `已保存 ${body.words.length} 个热词${body.vocabularyId ? '，已同步百炼（词表 ' + body.vocabularyId + '）' : body.note ? '（' + body.note + '）' : ''}`
+    : '保存失败: ' + body.error;
+};
+
+(async () => {
+  const d = await (await fetch('/api/hotwords')).json();
+  hwWords = d.words;
+  renderHw();
+})();
 
 const STATUS = {
   uploaded: ['排队中', 'b-working'], transcribing: ['转写中', 'b-working'],

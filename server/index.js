@@ -98,6 +98,31 @@ app.patch('/api/recordings/:id/segments/:idx', (req, res) => {
   res.json({ ok: true, segment: seg });
 });
 
+// ---- 热词表管理（存数据库，变更自动同步百炼）----
+const vocabulary = require('./asr/vocabulary');
+
+app.get('/api/hotwords', (req, res) => {
+  res.json({
+    words: store.getMeta('hotwords') || [],
+    vocabularyId: store.getMeta('vocabularyId') || null,
+  });
+});
+
+app.put('/api/hotwords', async (req, res) => {
+  const words = [...new Set(((req.body || {}).words || []).map(w => String(w).trim()).filter(Boolean))];
+  if (words.length > 500) return res.status(400).json({ error: '热词表最多 500 个（单表容量上限），请精简' });
+  store.setMeta('hotwords', words);
+  if ((process.env.ASR_PROVIDER || '').toLowerCase() !== 'dashscope' || !process.env.DASHSCOPE_API_KEY) {
+    return res.json({ ok: true, words, vocabularyId: null, note: '当前非百炼模式，仅保存未同步' });
+  }
+  try {
+    const id = await vocabulary.sync(words);
+    res.json({ ok: true, words, vocabularyId: id });
+  } catch (e) {
+    res.status(500).json({ error: '热词已保存，但同步百炼失败: ' + e.message });
+  }
+});
+
 // 导出 Word（总结 + 思维导图大纲 + 转写稿全文）
 app.get('/api/recordings/:id/export/docx', async (req, res) => {
   const rec = store.get(req.params.id);

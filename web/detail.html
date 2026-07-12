@@ -241,7 +241,10 @@ async function exportMindmapPNG() {
 }
 
 async function reprocess() {
-  await fetch(`/api/recordings/${id}/reprocess`, { method: 'POST' });
+  const full = confirm(
+    '「确定」= 重新转写 + 总结（重新计费，应用最新热词，会覆盖已做的说话人/文字修正）\n' +
+    '「取消」= 只重新生成总结和导图（免费，保留修正）');
+  await fetch(`/api/recordings/${id}/reprocess${full ? '?full=1' : ''}`, { method: 'POST' });
   mmRendered = false;
   document.getElementById('p-transcript').innerHTML = '<div class="status">重新处理中…</div>';
   load();

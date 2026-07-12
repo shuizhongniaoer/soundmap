@@ -5,6 +5,14 @@
 const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
 const BASE = `${HOST}/api/v1`;
 
+function getVocabularyId() {
+  try {
+    return require('../store').getMeta('vocabularyId') || process.env.ASR_VOCABULARY_ID || null;
+  } catch {
+    return process.env.ASR_VOCABULARY_ID || null;
+  }
+}
+
 async function dsFetch(url, options = {}) {
   const res = await fetch(url, {
     ...options,
@@ -45,8 +53,8 @@ module.exports = {
         parameters: {
           diarization_enabled: true,
           language_hints: ['zh', 'en'],
-          // 热词表：在百炼控制台创建（人名/专有名词），显著提升专名识别准确率
-          ...(process.env.ASR_VOCABULARY_ID ? { vocabulary_id: process.env.ASR_VOCABULARY_ID } : {}),
+          // 热词表：优先用页面管理的词表（store.meta），兼容 .env 手动配置
+          ...(getVocabularyId() ? { vocabulary_id: getVocabularyId() } : {}),
         },
       }),
     });

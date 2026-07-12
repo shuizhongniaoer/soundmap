@@ -81,13 +81,20 @@ window.onload = function() {
         appBar: AppBar(
           title: Text(title, overflow: TextOverflow.ellipsis),
           actions: [
-            IconButton(
-              tooltip: '重新生成',
+            PopupMenuButton<String>(
               icon: const Icon(Icons.refresh),
-              onPressed: () async {
-                await Api.reprocess(widget.id);
+              tooltip: '重新生成',
+              onSelected: (v) async {
+                _mmLoaded = null;
+                await Api.reprocess(widget.id, full: v == 'full');
                 _load();
               },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                    value: 'llm', child: Text('重新生成总结/导图（免费）')),
+                PopupMenuItem(
+                    value: 'full', child: Text('重新转写+总结（应用最新热词）')),
+              ],
             ),
           ],
           bottom: const TabBar(tabs: [
