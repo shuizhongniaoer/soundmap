@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../api.dart';
 
@@ -60,7 +61,11 @@ class _DetailPageState extends State<DetailPage> {
 window.onload = function() {
   const md = ${jsonEncode(md)};
   const { root } = new window.markmap.Transformer().transform(md);
-  window.markmap.Markmap.create('#mm', { autoFit: true }, root);
+  const mm = window.markmap.Markmap.create('#mm', { autoFit: true }, root);
+  // WebView 尺寸在加载后才稳定，延迟多次自适应，避免只显示局部
+  setTimeout(() => mm.fit(), 300);
+  setTimeout(() => mm.fit(), 1000);
+  window.addEventListener('resize', () => mm.fit());
 };
 </script></body></html>''';
     _mmController ??= WebViewController()
@@ -81,6 +86,24 @@ window.onload = function() {
         appBar: AppBar(
           title: Text(title, overflow: TextOverflow.ellipsis),
           actions: [
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.ios_share),
+              tooltip: '导出',
+              onSelected: (v) async {
+                final base = await Api.base();
+                final url = v == 'word'
+                    ? '$base/api/recordings/${widget.id}/export/docx'
+                    : '$base/detail.html?id=${widget.id}';
+                await launchUrl(Uri.parse(url),
+                    mode: LaunchMode.externalApplication);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'word', child: Text('导出 Word')),
+                PopupMenuItem(
+                    value: 'web',
+                    child: Text('浏览器打开（可导出导图 PNG/Markdown）')),
+              ],
+            ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.refresh),
               tooltip: '重新生成',
