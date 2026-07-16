@@ -3,20 +3,23 @@
 const mock = require('./mock');
 const dashscope = require('./dashscope');
 const xfyun = require('./xfyun');
+const local = require('./local');
 
 function available(name) {
   if (name === 'dashscope') return !!process.env.DASHSCOPE_API_KEY;
   if (name === 'xfyun') {
     return !!(process.env.XFYUN_APPID && process.env.XFYUN_API_KEY && process.env.XFYUN_API_SECRET);
   }
+  if (name === 'local') return true; // 服务未启动时报错会给出启动指引
   return name === 'mock';
 }
 
-// name 可为 'dashscope' | 'xfyun' | 'mock' | 空（用 .env 默认）
+// name 可为 'dashscope' | 'xfyun' | 'local' | 'mock' | 空（用 .env 默认）
 function resolve(name) {
   const want = (name || process.env.ASR_PROVIDER || 'mock').toLowerCase();
   if (want === 'dashscope' && available('dashscope')) return dashscope;
   if (want === 'xfyun' && available('xfyun')) return xfyun;
+  if (want === 'local') return local;
   if (want !== 'mock') console.warn(`[asr] ${want} 不可用（缺少凭证），降级为 mock`);
   return mock;
 }

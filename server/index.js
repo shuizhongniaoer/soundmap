@@ -39,7 +39,7 @@ app.post('/api/recordings', upload.single('audio'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '缺少音频文件（字段名 audio）' });
   // multer 按 latin1 解码 originalname，中文文件名需转回 utf8
   const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-  const asrProvider = ['dashscope', 'xfyun', 'mock'].includes(req.body.asrProvider)
+  const asrProvider = ['dashscope', 'xfyun', 'local', 'mock'].includes(req.body.asrProvider)
     ? req.body.asrProvider : null;
   const rec = store.create({
     id: crypto.randomUUID(),
