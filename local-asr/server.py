@@ -32,6 +32,13 @@ class Req(BaseModel):
     hotwords: list[str] = []  # 热词（SeACo-Paraformer 上下文偏置）
 
 
+@app.get("/")
+def index():
+    return {"service": "soundmap-local-asr", "status": "running",
+            "model_loaded": _model is not None,
+            "hint": "本服务由声图主程序调用，无需在浏览器操作。健康检查: /health"}
+
+
 @app.get("/health")
 def health():
     return {"ok": True, "loaded": _model is not None}
