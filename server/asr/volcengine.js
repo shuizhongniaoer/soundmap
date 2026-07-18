@@ -27,6 +27,21 @@ module.exports = {
     if (!fileUrl || fileUrl.includes('localhost') || fileUrl.includes('127.0.0.1')) {
       throw new Error('豆包需要可公网访问的音频 URL，请确认 PUBLIC_BASE_URL（cpolar）已配置且服务可达。');
     }
+    // 预检：先自己从公网下载一下这个地址，确认外部服务器真的能拿到音频
+    try {
+      const pre = await fetch(fileUrl, {
+        headers: { Range: 'bytes=0-1023' },
+        signal: AbortSignal.timeout(10000),
+        redirect: 'follow',
+      });
+      const ct = pre.headers.get('content-type') || '';
+      if (!pre.ok) throw new Error(`HTTP ${pre.status}`);
+      if (/text\/html/i.test(ct)) throw new Error(`返回的是网页（${ct}），隧道在弹拦截页而不是音频`);
+    } catch (e) {
+      throw new Error(`音频公网地址预检失败: ${e.message}\nURL: ${fileUrl}\n请检查 cpolar 是否在线、地址是否最新、主服务是否在跑`);
+    }
+    console.log('[volcengine] 预检通过，提交转写:', fileUrl);
+
     const format = (filename.split('.').pop() || 'mp3').toLowerCase();
     const requestId = crypto.randomUUID();
 
