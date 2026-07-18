@@ -9,7 +9,7 @@ if [ ! -d FireRedASR ]; then
   git clone --depth 1 https://github.com/FireRedTeam/FireRedASR.git
 fi
 echo "[firered] 安装依赖…"
-./.venv/bin/pip install kaldiio sentencepiece modelscope 2>/dev/null || true
+./.venv/bin/pip install kaldiio sentencepiece kaldi-native-fbank modelscope
 
 echo "[firered] 从 ModelScope 下载模型 FireRedASR-AED-L（约 4GB，国内直连）…"
 ./.venv/bin/modelscope download --model pengzhendong/FireRedASR-AED-L \

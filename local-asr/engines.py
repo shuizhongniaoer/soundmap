@@ -157,6 +157,8 @@ class Qwen3Engine:
     def _text(out):
         if isinstance(out, list):
             out = out[0] if out else ""
+        if hasattr(out, "text"):  # qwen_asr 返回 ASRTranscription 对象
+            return (out.text or "").strip()
         if isinstance(out, dict):
             return (out.get("text") or out.get("transcript") or "").strip()
         return str(out or "").strip()
