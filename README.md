@@ -53,13 +53,13 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 
 本地服务支持三个识别引擎（`LOCAL_ASR_ENGINE` 切换，重启生效）：
 
-| 引擎 | 启动方式 | 特点 |
+| 引擎 | 启动方式 | 实测结论（电话录音场景，2026-07） |
 |---|---|---|
-| funasr（默认） | `./local-asr/start.sh` | Paraformer + 说话人分离 + 热词，速度快，准确率一般 |
-| firered | 先 `./local-asr/setup-firered.sh`，再 `LOCAL_ASR_ENGINE=firered ./local-asr/start.sh` | FireRedASR-AED 1.1B，中文开源 SOTA 档（试验：暂无分人/热词） |
-| qwen3 | 先 `./local-asr/setup-qwen3.sh`，再 `HF_ENDPOINT=https://hf-mirror.com LOCAL_ASR_ENGINE=qwen3 ./local-asr/start.sh` | Qwen3-ASR-1.7B，52 语种方言，自带标点（试验：暂无分人） |
+| funasr（默认） | `./local-asr/start.sh` | 速度快、有分人和热词，但准确率不行（Paraformer 已过时） |
+| firered | `./local-asr/setup-firered.sh` 后 `LOCAL_ASR_ENGINE=firered ./local-asr/start.sh` | 质量本地最佳（仍逊讯飞），但 PyTorch CPU 推理太慢（RTF>1），待换 ONNX 加速 |
+| qwen3 | 已淘汰：实测转写内容与录音偏差过大 | —— |
 
-试验引擎验证识别质量用；哪个胜出再为它补说话人分离。未来部署形态：云上轻量服务器做入口 + 本机跑此服务当 worker。
+结论：云端主力=讯飞大模型；本地线待 FireRed ONNX 提速后再评估。未来部署形态：云上轻量服务器做入口 + 本机跑此服务当 worker。
 
 ## 主要功能
 
