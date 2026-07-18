@@ -49,7 +49,17 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 ./local-asr/start.sh   # 首次自动建 venv、装依赖、下载模型（约 1~2GB），之后离线运行
 ```
 
-服务起在 `127.0.0.1:8100`。上传录音时转写引擎选"本地"，或 `.env` 设 `ASR_PROVIDER=local` 作为默认。热词表自动生效（SeACo 上下文偏置）。质量约等于云端"标准版"，低于讯飞/百炼大模型档；定位是免费档/隐私档。未来部署形态：云上轻量服务器做入口 + 本机跑此服务当 worker。
+服务起在 `127.0.0.1:8100`。上传录音时转写引擎选"本地"，或 `.env` 设 `ASR_PROVIDER=local` 作为默认。
+
+本地服务支持三个识别引擎（`LOCAL_ASR_ENGINE` 切换，重启生效）：
+
+| 引擎 | 启动方式 | 特点 |
+|---|---|---|
+| funasr（默认） | `./local-asr/start.sh` | Paraformer + 说话人分离 + 热词，速度快，准确率一般 |
+| firered | 先 `./local-asr/setup-firered.sh`，再 `LOCAL_ASR_ENGINE=firered ./local-asr/start.sh` | FireRedASR-AED 1.1B，中文开源 SOTA 档（试验：暂无分人/热词） |
+| qwen3 | 先 `./local-asr/setup-qwen3.sh`，再 `HF_ENDPOINT=https://hf-mirror.com LOCAL_ASR_ENGINE=qwen3 ./local-asr/start.sh` | Qwen3-ASR-1.7B，52 语种方言，自带标点（试验：暂无分人） |
+
+试验引擎验证识别质量用；哪个胜出再为它补说话人分离。未来部署形态：云上轻量服务器做入口 + 本机跑此服务当 worker。
 
 ## 主要功能
 

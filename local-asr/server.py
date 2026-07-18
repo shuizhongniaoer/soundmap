@@ -1,6 +1,9 @@
-# 声图 · 本地转写服务（FunASR）
-# 全家桶：FSMN-VAD 切句 + Paraformer-large 识别 + CT-Punc 标点 + CAM++ 说话人分离 + SeACo 热词
-# 首次启动会自动从 ModelScope 下载模型（约 1~2GB），之后离线运行。
+# 声图 · 本地转写服务
+# 三引擎可切换（环境变量 LOCAL_ASR_ENGINE）：
+#   funasr  - FunASR 全家桶（默认）：Paraformer + VAD + 标点 + CAM++ 说话人分离 + 热词
+#   firered - FireRedASR-AED：中文开源 SOTA 档（试验引擎，暂无分人/热词）
+#   qwen3   - Qwen3-ASR-1.7B：52 语种方言，自带标点（试验引擎，暂无分人）
+# 首次使用某引擎会自动/按脚本下载模型，之后离线运行。
 import os
 import time
 
@@ -8,69 +11,45 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 app = FastAPI(title="soundmap-local-asr")
-_model = None
+ENGINE_NAME = os.environ.get("LOCAL_ASR_ENGINE", "funasr")
+_engine = None
 
 
-def get_model():
-    global _model
-    if _model is None:
-        print("[local-asr] 首次加载模型（首次运行需下载约 1~2GB，请耐心等待）…")
+def get_engine():
+    global _engine
+    if _engine is None:
+        print(f"[local-asr] 加载引擎 {ENGINE_NAME}（首次可能需下载模型）…")
         t0 = time.time()
-        from funasr import AutoModel
-        _model = AutoModel(
-            # 可用环境变量 LOCAL_ASR_MODEL 换模型（如电话 8k 专用模型），默认 Paraformer-large 16k
-            model=os.environ.get("LOCAL_ASR_MODEL", "paraformer-zh"),
-            vad_model="fsmn-vad",        # 语音活动检测（切句）
-            punc_model="ct-punc",        # 标点恢复
-            spk_model="cam++",           # 说话人分离
-            disable_update=True,
-        )
-        print(f"[local-asr] 模型就绪，耗时 {time.time() - t0:.0f}s")
-    return _model
+        from engines import build_engine
+        _engine = build_engine(ENGINE_NAME)
+        print(f"[local-asr] 引擎 {ENGINE_NAME} 就绪，耗时 {time.time() - t0:.0f}s")
+    return _engine
 
 
 class Req(BaseModel):
     path: str                 # 音频文件绝对路径（与 Node 服务同机）
-    hotwords: list[str] = []  # 热词（SeACo-Paraformer 上下文偏置）
+    hotwords: list[str] = []
 
 
 @app.get("/")
 def index():
-    return {"service": "soundmap-local-asr", "status": "running",
-            "model_loaded": _model is not None,
-            "hint": "本服务由声图主程序调用，无需在浏览器操作。健康检查: /health"}
+    return {"service": "soundmap-local-asr", "engine": ENGINE_NAME,
+            "status": "running", "model_loaded": _engine is not None,
+            "hint": "本服务由声图主程序调用。切换引擎: LOCAL_ASR_ENGINE=firered|qwen3|funasr ./start.sh"}
 
 
 @app.get("/health")
 def health():
-    return {"ok": True, "loaded": _model is not None}
+    return {"ok": True, "engine": ENGINE_NAME, "loaded": _engine is not None}
 
 
 @app.post("/transcribe")
 def transcribe(req: Req):
-    m = get_model()
-    kwargs = {"batch_size_s": 300}
-    if req.hotwords:
-        kwargs["hotword"] = " ".join(req.hotwords)
+    eng = get_engine()
     t0 = time.time()
-    res = m.generate(input=req.path, **kwargs)
-    out = res[0] if res else {}
-    segments = []
-    for s in out.get("sentence_info") or []:
-        text = (s.get("text") or "").strip()
-        if not text:
-            continue
-        segments.append({
-            "start": round(s.get("start", 0) / 1000),
-            "end": round(s.get("end", 0) / 1000),
-            "speaker": f"说话人{int(s.get('spk', 0)) + 1}",
-            "text": text,
-        })
-    # 极短音频可能没有 sentence_info，退化为整段
-    if not segments and (out.get("text") or "").strip():
-        segments = [{"start": 0, "end": 0, "speaker": "说话人1", "text": out["text"].strip()}]
-    print(f"[local-asr] {req.path} 转写完成: {len(segments)} 句, 耗时 {time.time() - t0:.1f}s")
-    return {"language": "zh", "segments": segments}
+    result = eng.transcribe(req.path, req.hotwords)
+    print(f"[local-asr/{ENGINE_NAME}] {req.path}: {len(result['segments'])} 句, 耗时 {time.time() - t0:.1f}s")
+    return result
 
 
 if __name__ == "__main__":
