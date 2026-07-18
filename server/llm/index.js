@@ -43,6 +43,11 @@ const dashscope = {
   async mindmap(segments, title) {
     return stripFence(await chat(prompts.mindmapMessages(segments, title)));
   },
+  async proofread(segments, hotwords) {
+    const out = await chat(prompts.proofreadMessages(segments, hotwords), { json: true });
+    const parsed = JSON.parse(stripFence(out));
+    return Array.isArray(parsed.corrections) ? parsed.corrections : [];
+  },
 };
 
 const mock = {
@@ -64,6 +69,9 @@ const mock = {
       ],
       quotes: ['那这个作为本周最高优先级。'],
     };
+  },
+  async proofread() {
+    return []; // mock 不做校对
   },
   async mindmap() {
     await new Promise(r => setTimeout(r, 500));
@@ -104,4 +112,5 @@ module.exports = {
   get name() { return resolveProvider().name; },
   summarize(segments, title) { return resolveProvider().summarize(segments, title); },
   mindmap(segments, title) { return resolveProvider().mindmap(segments, title); },
+  proofread(segments, hotwords) { return resolveProvider().proofread(segments, hotwords); },
 };

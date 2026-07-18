@@ -22,6 +22,7 @@
   .seg .txt { flex: 1; cursor: text; border-radius: 4px; padding: 0 4px; }
   .seg .txt:hover { background: #f2f6fa; }
   .seg .txt[contenteditable="true"] { background: #fffbe8; outline: 2px solid #e2c46d; }
+  .seg .txt.fixed { border-bottom: 1px dashed #d9a441; }
   .seg .ts { color: var(--muted); font-size: 12px; white-space: nowrap; padding-top: 3px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-bottom: 12px; margin-bottom: 8px; border-bottom: 1px solid #e4e9ef; }
   .chip { background: #eef3f8; color: var(--accent); border-radius: 20px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
@@ -117,7 +118,7 @@ function renderTranscript() {
     `<div class="chips">${speakers.map(sp => `<span class="chip" data-sp="${esc(sp)}">${esc(sp)} ✏️</span>`).join('')}
      <span class="hint">点名字批量重命名 · 点每句前的说话人单独修改 · 点文字直接改错字</span></div>` +
     segs.map((s, i) =>
-      `<div class="seg"><span class="ts">${fmt(s.start)}</span><span class="who" data-i="${i}" title="修改这句的说话人">${esc(s.speaker)}</span><span class="txt" data-i="${i}" title="点击修改文字">${esc(s.text)}</span></div>`
+      `<div class="seg"><span class="ts">${fmt(s.start)}</span><span class="who" data-i="${i}" title="修改这句的说话人">${esc(s.speaker)}</span><span class="txt${s.orig ? ' fixed' : ''}" data-i="${i}" title="${s.orig ? 'AI 已校对，识别原文: ' + esc(s.orig) : '点击修改文字'}">${esc(s.text)}</span></div>`
     ).join('');
   tEl.querySelectorAll('.chip').forEach(c => c.onclick = () => renameSpeaker(c.dataset.sp));
   tEl.querySelectorAll('.who').forEach(w => w.onclick = () => editSegSpeaker(+w.dataset.i));

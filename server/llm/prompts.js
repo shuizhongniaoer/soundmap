@@ -28,6 +28,25 @@ exports.summaryMessages = (segments, title) => [
   { role: 'user', content: `录音标题: ${title || '未命名'}\n\n转写稿:\n${transcriptText(segments)}` },
 ];
 
+// 转写稿自动校对：只修上下文明显矛盾的同音/近音误识别，绝不润色改写
+exports.proofreadMessages = (segments, hotwords = []) => [
+  {
+    role: 'system',
+    content: `你是语音转写稿校对员。输入是带行号的转写稿，可能包含语音识别错误。
+
+只允许修正两类错误：
+1. 与上下文明显矛盾的同音/近音误识别词（例：通篇在谈"淡旺季"，某行出现"蛋王记"或"大王记"，应修正为"淡旺季"）
+2. 已知词表中的人名/专有名词被误识别成别的字
+
+严格禁止：改写句式、增删内容、润色口语、删减语气词和重复。没有十足把握的不要改。
+${hotwords.length ? '已知专有名词表：' + hotwords.join('、') : ''}
+
+输出严格 JSON（不要输出其他内容）：{"corrections":[{"i":行号,"text":"该行修正后的完整文本"}]}
+只包含确实修改了的行；没有需要修改的则输出 {"corrections":[]}。`,
+  },
+  { role: 'user', content: segments.map((s, i) => `${i}|${s.speaker}|${s.text}`).join('\n') },
+];
+
 exports.mindmapMessages = (segments, title) => [
   {
     role: 'system',

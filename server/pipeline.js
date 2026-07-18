@@ -50,6 +50,26 @@ async function run(id) {
         : null;
       const provider = asr.resolve(rec.asrProvider); // 支持按录音指定引擎
       transcript = await provider.transcribe({ fileUrl, filename: asrFile });
+
+      // LLM 自动校对：修正上下文明显矛盾的误识别词（原文保留在 seg.orig，前端可查看）
+      try {
+        const hotwords = store.getMeta('hotwords') || [];
+        const corrections = await llm.proofread(transcript.segments, hotwords);
+        let fixed = 0;
+        for (const c of corrections) {
+          const seg = transcript.segments[c.i];
+          const text = (c.text || '').trim();
+          if (seg && text && text !== seg.text) {
+            seg.orig = seg.text;
+            seg.text = text;
+            fixed++;
+          }
+        }
+        if (fixed) console.log(`[pipeline] ${id} LLM 校对修正 ${fixed} 处`);
+      } catch (e) {
+        console.warn(`[pipeline] ${id} 校对跳过:`, e.message);
+      }
+
       store.update(id, { transcript, status: 'summarizing', providers: { ...(rec.providers || {}), asr: provider.name } });
     } else {
       store.update(id, { status: 'summarizing' });
