@@ -65,12 +65,16 @@ app.get('/api/recordings/:id', (req, res) => {
   res.json(rec);
 });
 
-// 重新生成（有转写稿时只重跑 LLM，不重复付费转写；加 ?full=1 强制重新转写）
+// 重新生成（有转写稿时只重跑 LLM；?full=1 重新转写；?provider=local|xfyun|dashscope 换引擎重转）
 app.post('/api/recordings/:id/reprocess', (req, res) => {
   const rec = store.get(req.params.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
   const patch = { status: 'uploaded', error: null };
   if (req.query.full === '1') patch.transcript = null;
+  if (['dashscope', 'xfyun', 'local', 'mock'].includes(req.query.provider)) {
+    patch.asrProvider = req.query.provider;
+    patch.transcript = null; // 换引擎必然重转
+  }
   store.update(rec.id, patch);
   pipeline.process(rec.id);
   res.json({ ok: true });

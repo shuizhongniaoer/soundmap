@@ -242,9 +242,18 @@ async function exportMindmapPNG() {
 
 async function reprocess() {
   const full = confirm(
-    '「确定」= 重新转写 + 总结（重新计费，应用最新热词，会覆盖已做的说话人/文字修正）\n' +
+    '「确定」= 重新转写 + 总结（会覆盖已做的说话人/文字修正）\n' +
     '「取消」= 只重新生成总结和导图（免费，保留修正）');
-  await fetch(`/api/recordings/${id}/reprocess${full ? '?full=1' : ''}`, { method: 'POST' });
+  let q = full ? '?full=1' : '';
+  if (full) {
+    const cur = (rec && rec.asrProvider) || '默认';
+    const p = prompt(
+      `转写引擎（当前: ${cur}）\n输入 local / xfyun / dashscope 可换引擎，留空沿用当前`, '');
+    if (p && ['local', 'xfyun', 'dashscope', 'mock'].includes(p.trim())) {
+      q += `&provider=${p.trim()}`;
+    }
+  }
+  await fetch(`/api/recordings/${id}/reprocess${q}`, { method: 'POST' });
   mmRendered = false;
   document.getElementById('p-transcript').innerHTML = '<div class="status">重新处理中…</div>';
   load();
