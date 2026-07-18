@@ -42,10 +42,14 @@ async function publicBase() {
     const res = await fetch('http://127.0.0.1:4040/api/tunnels', { signal: AbortSignal.timeout(2000) });
     if (res.ok) {
       const data = await res.json();
-      const list = (data.tunnels || []).filter(t => /^https?:/.test(t.public_url || ''));
+      const port = String(process.env.PORT || 3000);
+      // 只认指向本服务端口的隧道（cpolar 默认配置可能带 8080 等无关隧道）
+      const list = (data.tunnels || []).filter(t =>
+        /^https?:/.test(t.public_url || '') &&
+        String((t.config && t.config.addr) || t.local_addr || '').includes(':' + port));
       const t = list.find(x => x.public_url.startsWith('https')) || list[0];
       if (t) {
-        console.log('[pipeline] 探测到隧道公网地址:', t.public_url);
+        console.log('[pipeline] 探测到隧道公网地址:', t.public_url, '->', (t.config && t.config.addr) || '');
         return t.public_url.replace(/\/$/, '');
       }
     }
