@@ -17,7 +17,9 @@ const _statusLabel = {
 };
 
 class ListPage extends StatefulWidget {
-  const ListPage({super.key});
+  const ListPage({super.key, this.user, this.onLogout});
+  final Map<String, dynamic>? user;
+  final Future<void> Function()? onLogout;
   @override
   State<ListPage> createState() => _ListPageState();
 }
@@ -116,11 +118,12 @@ class _ListPageState extends State<ListPage> {
   Future<void> _refresh() async {
     try {
       final items = await Api.list(query: _query);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _items = items;
           _error = null;
         });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
@@ -172,21 +175,43 @@ class _ListPageState extends State<ListPage> {
                         '模拟器: http://10.0.2.2:3000\n真机: http://电脑局域网IP:3000'),
               ),
               const SizedBox(height: 12),
-              RadioListTile<String>(
-                title: const Text('标准音质'),
-                subtitle: const Text('96kbps 单声道，省流量'),
-                value: 'standard',
+              if (widget.user != null)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.account_circle),
+                  title: Text(widget.user?['nickname']?.toString() ?? '声图用户'),
+                  subtitle: const Text('当前账号'),
+                  trailing: widget.onLogout == null
+                      ? null
+                      : TextButton(
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            await widget.onLogout!();
+                          },
+                          child: const Text('退出登录'),
+                        ),
+                ),
+              RadioGroup<String>(
                 groupValue: quality,
-                dense: true,
-                onChanged: (v) => setDlg(() => quality = v!),
-              ),
-              RadioListTile<String>(
-                title: const Text('高音质'),
-                subtitle: const Text('192kbps / 48kHz，文件约大一倍'),
-                value: 'high',
-                groupValue: quality,
-                dense: true,
-                onChanged: (v) => setDlg(() => quality = v!),
+                onChanged: (v) {
+                  if (v != null) setDlg(() => quality = v);
+                },
+                child: const Column(
+                  children: [
+                    RadioListTile<String>(
+                      title: Text('标准音质'),
+                      subtitle: Text('96kbps 单声道，省流量'),
+                      value: 'standard',
+                      dense: true,
+                    ),
+                    RadioListTile<String>(
+                      title: Text('高音质'),
+                      subtitle: Text('192kbps / 48kHz，文件约大一倍'),
+                      value: 'high',
+                      dense: true,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

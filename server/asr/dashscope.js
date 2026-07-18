@@ -5,9 +5,10 @@
 const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
 const BASE = `${HOST}/api/v1`;
 
-function getVocabularyId() {
+function getVocabularyId(userId) {
   try {
-    return require('../store').getMeta('vocabularyId') || process.env.ASR_VOCABULARY_ID || null;
+    const suffix = userId && userId !== 'local' ? `:${userId}` : '';
+    return require('../store').getMeta(`vocabularyId${suffix}`) || process.env.ASR_VOCABULARY_ID || null;
   } catch {
     return process.env.ASR_VOCABULARY_ID || null;
   }
@@ -38,7 +39,7 @@ module.exports = {
   /**
    * @param {{ fileUrl?: string, filename: string }} opts
    */
-  async transcribe({ fileUrl }) {
+  async transcribe({ fileUrl, userId }) {
     if (!fileUrl || fileUrl.includes('localhost') || fileUrl.includes('127.0.0.1')) {
       throw new Error('paraformer 需要可公网访问的音频 URL。请设置 PUBLIC_BASE_URL（如 ngrok 公网地址），或将 ASR_PROVIDER 设为 mock。');
     }
@@ -54,7 +55,7 @@ module.exports = {
           diarization_enabled: true,
           language_hints: ['zh', 'en'],
           // 热词表：优先用页面管理的词表（store.meta），兼容 .env 手动配置
-          ...(getVocabularyId() ? { vocabulary_id: getVocabularyId() } : {}),
+          ...(getVocabularyId(userId) ? { vocabulary_id: getVocabularyId(userId) } : {}),
         },
       }),
     });

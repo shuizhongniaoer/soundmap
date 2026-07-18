@@ -25,12 +25,14 @@ async function call(input) {
 }
 
 // words: string[] -> 同步到百炼，返回 vocabulary_id（空列表则删除词表并返回 null）
-async function sync(words) {
-  const existing = store.getMeta('vocabularyId');
+async function sync(words, userId = 'local') {
+  const suffix = userId && userId !== 'local' ? `:${userId}` : '';
+  const key = `vocabularyId${suffix}`;
+  const existing = store.getMeta(key);
   if (!words.length) {
     if (existing) {
       try { await call({ action: 'delete_vocabulary', vocabulary_id: existing }); } catch {}
-      store.setMeta('vocabularyId', null);
+      store.setMeta(key, null);
     }
     return null;
   }
@@ -47,7 +49,7 @@ async function sync(words) {
   });
   const id = out.output && out.output.vocabulary_id;
   if (!id) throw new Error('创建热词表未返回 ID: ' + JSON.stringify(out));
-  store.setMeta('vocabularyId', id);
+  store.setMeta(key, id);
   return id;
 }
 

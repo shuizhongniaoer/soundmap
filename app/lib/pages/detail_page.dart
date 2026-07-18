@@ -90,22 +90,16 @@ window.onload = function() {
               icon: const Icon(Icons.ios_share),
               tooltip: '导出',
               onSelected: (v) async {
-                final base = await Api.base();
-                final url = switch (v) {
-                  'word' => '$base/api/recordings/${widget.id}/export/docx',
-                  'txt' => '$base/api/recordings/${widget.id}/export/txt',
-                  'srt' => '$base/api/recordings/${widget.id}/export/srt',
-                  _ => '$base/detail.html?id=${widget.id}',
-                };
-                await launchUrl(Uri.parse(url),
-                    mode: LaunchMode.externalApplication);
+                final format = v == 'word' ? 'docx' : v;
+                final url = await Api.exportUrl(widget.id, format);
+                await launchUrl(url, mode: LaunchMode.externalApplication);
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'word', child: Text('导出 Word')),
                 PopupMenuItem(value: 'txt', child: Text('导出 TXT')),
                 PopupMenuItem(value: 'srt', child: Text('导出 SRT 字幕')),
                 PopupMenuItem(
-                    value: 'web', child: Text('浏览器打开（可导出导图 PNG/Markdown）')),
+                    value: 'view', child: Text('浏览器打开（可导出导图 PNG/Markdown）')),
               ],
             ),
             PopupMenuButton<String>(

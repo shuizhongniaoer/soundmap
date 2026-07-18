@@ -26,9 +26,16 @@
   .b-working { background: #fff4e0; color: #b26a00; }
   .empty { color: var(--muted); text-align: center; padding: 24px; }
   .match { font-size: 12px; color: #526679; margin-top: 5px; max-width: 650px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .auth-mask { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(245,247,250,.96); padding: 24px; }
+  .auth-box { width: min(400px, 100%); background: #fff; border-radius: 16px; padding: 30px; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.12); }
 </style>
 </head>
 <body>
+<div class="auth-mask" id="authMask"><div class="auth-box">
+  <h1>声图 SoundMap</h1>
+  <p id="authHint" style="margin-top:14px;color:var(--muted);line-height:1.7">请登录后继续</p>
+  <button id="devLogin" style="display:none">本地测试登录</button>
+</div></div>
 <div class="wrap">
   <h1>声图 <small>录音 → 转写 → AI 总结 → 思维导图</small></h1>
 
@@ -74,6 +81,32 @@ const drop = document.getElementById('drop');
 const fileInput = document.getElementById('file');
 const submitBtn = document.getElementById('submit');
 let picked = null;
+
+async function ensureAuth() {
+  const mask = document.getElementById('authMask');
+  const me = await fetch('/api/auth/me', { cache: 'no-store' });
+  if (me.ok) {
+    mask.style.display = 'none';
+    return;
+  }
+  const cfg = await (await fetch('/api/auth/config')).json();
+  mask.style.display = 'grid';
+  document.getElementById('authHint').textContent = cfg.wechatEnabled
+    ? '移动端请使用微信一键登录。Web 微信扫码登录将在网站应用资质通过后接入。'
+    : '服务端尚未配置微信登录。';
+  const button = document.getElementById('devLogin');
+  if (cfg.devLoginEnabled) {
+    button.style.display = 'inline-block';
+    button.onclick = async () => {
+      const result = await fetch('/api/auth/dev', { method: 'POST' });
+      if (!result.ok) return alert((await result.json()).error || '登录失败');
+      mask.style.display = 'none';
+      location.reload();
+    };
+  }
+  await new Promise(() => {});
+}
+const authReady = ensureAuth();
 
 drop.onclick = () => fileInput.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
@@ -129,6 +162,7 @@ recBtn.onclick = async () => {
 };
 
 submitBtn.onclick = async () => {
+  await authReady;
   submitBtn.disabled = true;
   submitBtn.textContent = '上传中…';
   const fd = new FormData();
@@ -185,6 +219,7 @@ document.getElementById('hwSave').onclick = async () => {
 };
 
 (async () => {
+  await authReady;
   const d = await (await fetch('/api/hotwords')).json();
   hwWords = d.words;
   renderHw();
@@ -207,6 +242,7 @@ searchInput.oninput = () => {
 };
 
 async function refresh() {
+  await authReady;
   const query = searchInput.value.trim();
   const list = await (await fetch('/api/recordings' + (query ? `?q=${encodeURIComponent(query)}` : ''), { cache: 'no-store' })).json();
   const el = document.getElementById('list');

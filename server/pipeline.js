@@ -7,6 +7,7 @@ const store = require('./store');
 const asr = require('./asr');
 const llm = require('./llm');
 const { applyCorrections } = require('./llm/proofread');
+const { signedPath } = require('./media');
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 
@@ -68,13 +69,14 @@ async function run(id) {
       store.update(id, { status: 'transcribing' });
       const asrFile = preprocess(rec.filename);
       const base = await publicBase();
-      const fileUrl = base ? `${base}/uploads/${encodeURIComponent(asrFile)}` : null;
+      const fileUrl = base ? `${base}${signedPath(asrFile)}` : null;
       const provider = asr.resolve(rec.asrProvider); // 支持按录音指定引擎
-      transcript = await provider.transcribe({ fileUrl, filename: asrFile });
+      transcript = await provider.transcribe({ fileUrl, filename: asrFile, userId: rec.userId || 'local' });
 
       // LLM 自动校对：修正上下文明显矛盾的误识别词（原文保留在 seg.orig，前端可查看）
       try {
-        const hotwords = store.getMeta('hotwords') || [];
+        const suffix = rec.userId && rec.userId !== 'local' ? `:${rec.userId}` : '';
+        const hotwords = store.getMeta(`hotwords${suffix}`) || [];
         const corrections = await llm.proofread(transcript.segments, hotwords);
         const { fixed, rejected } = applyCorrections(transcript.segments, corrections);
         if (fixed) console.log(`[pipeline] ${id} LLM 校对修正 ${fixed} 处`);

@@ -4,7 +4,7 @@
 
 定位不是"录音转写工具"，而是**个人音频知识库**——转写与总结是入口，检索、问答与知识沉淀是留存壁垒。完整产品与技术设计见 [docs/](docs/)。
 
-## 当前进度：Phase 0（Web 最小闭环）
+## 当前进度：Phase 1（App MVP）
 
 上传音频 → ASR 转写（说话人区分）→ LLM 多维总结 → markmap 思维导图 → 编辑修正 → 导出。
 
@@ -33,6 +33,17 @@ npm start              # http://localhost:3000
 ```
 
 mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、总结和思维导图（假数据，用于验证流程和开发前端）。
+
+## 微信登录 / 注册
+
+微信首次授权会自动创建声图账号，后续授权登录同一账号。客户端只获取一次性 `code`，`WECHAT_APP_SECRET`、微信 `access_token` 与声图会话均由服务端处理；业务会话是 30 天有效的随机令牌，数据库只保存其 SHA-256 摘要。录音、转写稿、热词和导出接口均按账号隔离，ASR 拉取音频改用 15 分钟有效的签名地址。
+
+1. 在微信开放平台注册并完成开发者认证，创建并审核「移动应用」，申请微信登录能力。
+2. Android 应用包名填写 `com.soundmap.soundmap`，并配置正式签名 MD5；上线前请同时替换当前调试签名配置。
+3. `.env` 填写 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`、`MEDIA_SIGNING_SECRET`，正式环境设置 `AUTH_REQUIRED=1`、`AUTH_DEV_LOGIN=0`。
+4. iOS 接入时还需填写 `WECHAT_UNIVERSAL_LINK` 并配置 Associated Domains；当前仓库暂未生成 iOS 工程。
+
+本地联调可保持 `AUTH_REQUIRED=1`、`AUTH_DEV_LOGIN=1`，登录页会显示“本地测试登录”。该入口在正式环境必须关闭。国内正式上架还需补充短信验证码手机号绑定/实名流程与隐私政策；当前版本不提供不安全的“无验证码手机号注册”。
 
 ## 接入真实 API（阿里百炼）
 
@@ -73,6 +84,8 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 - 录音库全文搜索：标题、转写稿、说话人和 AI 总结
 - 转写稿与音频联动：点句子跳转播放，播放时高亮当前句
 - 导出：Word（总结+导图大纲+全文转写稿）、TXT、SRT、思维导图 PNG / Markdown
+- 微信一键登录（首次授权即注册）、30 天会话、账号级录音/热词隔离
+- 私有音频播放与 ASR 临时签名下载地址
 
 ## API
 
@@ -87,13 +100,18 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 | GET | /api/recordings/:id/export/docx | 导出 Word |
 | GET | /api/recordings/:id/export/txt | 导出纯文本转写稿 |
 | GET | /api/recordings/:id/export/srt | 导出 SRT 字幕 |
+| GET | /api/auth/config | 登录能力配置（不含 Secret） |
+| GET | /api/auth/wechat/state | 生成一次性 OAuth state |
+| POST | /api/auth/wechat | 微信 code 换取声图会话 |
+| GET | /api/auth/me | 当前账号 |
+| POST | /api/auth/logout | 注销当前会话 |
 
 状态机：`uploaded → transcribing → summarizing → done | error`
 
 ## 路线图（详见设计文档第 7 章）
 
 - [x] Phase 0：Web 最小闭环 + 浏览器录音 + 编辑修正 + 导出
-- [ ] Phase 1：Flutter App（安卓优先，app/ 已有 MVP：录音/上传/列表/详情）+ 账号与同步 + PostgreSQL/队列
+- [ ] Phase 1（进行中）：Flutter App（安卓优先，录音/上传/列表/详情/微信账号隔离已完成）；待 PostgreSQL、队列与云端对象存储
 - [ ] Phase 2：安卓通话录音自动导入、iOS Share Extension、自定义模板、分享页
 - [ ] Phase 3：会员体系 + 三端支付 + 国内外双站部署
 - [ ] Phase 4：实时转写、跨录音 RAG 问答、会议 Bot、团队版

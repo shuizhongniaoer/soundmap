@@ -111,11 +111,12 @@ async function load() {
   clearTimeout(pollTimer);
   try {
     const res = await fetch('/api/recordings/' + id, { cache: 'no-store' });
+    if (res.status === 401) { location.href = '/'; return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     rec = await res.json();
     updateProcessButton();
     document.getElementById('title').textContent = rec.title || rec.originalName;
-    const audioSrc = '/uploads/' + rec.filename;
+    const audioSrc = '/api/recordings/' + encodeURIComponent(rec.id) + '/audio';
     if (player.getAttribute('src') !== audioSrc) player.src = audioSrc;
 
     const tEl = document.getElementById('p-transcript');

@@ -9,8 +9,12 @@ const store = require('./store');
 const pipeline = require('./pipeline');
 const { buildDocx, buildTxt, buildSrt } = require('./export');
 const { searchRecordings } = require('./search');
+const auth = require('./auth');
+const media = require('./media');
+const { createRawToken, hashToken } = require('./auth/token');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -38,7 +42,62 @@ app.use(express.static(path.join(__dirname, '..', 'web'), {
     if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
   },
 }));
-app.use('/uploads', express.static(UPLOAD_DIR));
+app.use('/api/auth', auth.router);
+
+// ASR 供应商临时拉取音频：短期 HMAC 签名，不暴露永久公共文件地址。
+app.get('/asr-media/:filename', (req, res) => {
+  const filename = req.params.filename;
+  if (path.basename(filename) !== filename || !media.verify(filename, req.query.expires, req.query.signature)) {
+    return res.status(403).json({ error: 'invalid or expired media signature' });
+  }
+  const target = path.join(UPLOAD_DIR, filename);
+  if (!fs.existsSync(target)) return res.status(404).json({ error: 'not found' });
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.sendFile(target);
+});
+
+// Flutter 会在系统浏览器里打开导出文件，无法复用 App 的 Bearer Token。
+// 因此签发 2 分钟、仅可使用一次的下载凭证，而不是把业务会话放进 URL。
+app.get('/download/:token', async (req, res) => {
+  const grant = store.consumeDownloadToken(hashToken(req.params.token));
+  if (!grant) return res.status(403).json({ error: '下载地址无效或已过期' });
+  const rec = store.get(grant.recordingId);
+  const owned = rec && (rec.userId === grant.userId || (!rec.userId && grant.userId === 'local'));
+  if (!owned) return res.status(404).json({ error: 'not found' });
+  try {
+    const name = safeExportName(rec);
+    if (grant.format === 'docx') {
+      const buf = await buildDocx(rec);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="export.docx"; filename*=UTF-8''${encodeURIComponent(name + '.docx')}`);
+      return res.send(buf);
+    }
+    if (grant.format === 'txt') {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="transcript.txt"; filename*=UTF-8''${encodeURIComponent(name + '.txt')}`);
+      return res.send('\uFEFF' + buildTxt(rec));
+    }
+    res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="transcript.srt"; filename*=UTF-8''${encodeURIComponent(name + '.srt')}`);
+    return res.send('\uFEFF' + buildSrt(rec));
+  } catch (error) {
+    return res.status(500).json({ error: `导出失败: ${error.message}` });
+  }
+});
+
+// App -> 系统浏览器的一次性登录交接，用于打开完整 Web 详情页。
+app.get('/open/:token', (req, res) => {
+  const grant = store.consumeDownloadToken(hashToken(req.params.token));
+  if (!grant || grant.format !== 'view') return res.status(403).json({ error: '打开地址无效或已过期' });
+  const rec = store.get(grant.recordingId);
+  const user = store.getUser(grant.userId);
+  const owned = rec && (rec.userId === grant.userId || (!rec.userId && grant.userId === 'local'));
+  if (!owned || !user) return res.status(404).json({ error: 'not found' });
+  auth.issueSession(req, res, user);
+  res.redirect(`/detail.html?id=${encodeURIComponent(rec.id)}`);
+});
+
+app.use('/api', auth.authenticate);
 
 // 上传录音 -> 创建记录并触发处理管线
 app.post('/api/recordings', upload.single('audio'), (req, res) => {
@@ -55,6 +114,7 @@ app.post('/api/recordings', upload.single('audio'), (req, res) => {
     filename: req.file.filename,
     size: req.file.size,
     status: 'uploaded',
+    userId: req.user.id,
     createdAt: new Date().toISOString(),
   });
   pipeline.process(rec.id); // 异步执行，不阻塞响应
@@ -62,7 +122,7 @@ app.post('/api/recordings', upload.single('audio'), (req, res) => {
 });
 
 app.get('/api/recordings', (req, res) => {
-  const results = searchRecordings(store.list(), req.query.q);
+  const results = searchRecordings(store.listForUser(req.user.id), req.query.q);
   res.json(results.map(({ rec, match }) => {
     const { transcript, summary, mindmap, ...meta } = rec;
     return { ...meta, ...(match ? { match } : {}) };
@@ -70,14 +130,39 @@ app.get('/api/recordings', (req, res) => {
 });
 
 app.get('/api/recordings/:id', (req, res) => {
-  const rec = store.get(req.params.id);
+  const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
   res.json(rec);
 });
 
+app.get('/api/recordings/:id/audio', (req, res) => {
+  const rec = store.getForUser(req.params.id, req.user.id);
+  if (!rec) return res.status(404).json({ error: 'not found' });
+  const target = path.join(UPLOAD_DIR, rec.filename);
+  if (!fs.existsSync(target)) return res.status(404).json({ error: 'audio not found' });
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.sendFile(target);
+});
+
+app.post('/api/recordings/:id/export-link', (req, res) => {
+  const rec = store.getForUser(req.params.id, req.user.id);
+  if (!rec) return res.status(404).json({ error: 'not found' });
+  const format = ['docx', 'txt', 'srt', 'view'].includes(req.body?.format) ? req.body.format : null;
+  if (!format) return res.status(400).json({ error: 'format must be docx, txt, srt or view' });
+  const token = createRawToken();
+  store.createDownloadToken({
+    tokenHash: hashToken(token), recordingId: rec.id, userId: req.user.id, format,
+    expiresAt: new Date(Date.now() + (format === 'view' ? 30 : 120) * 1000).toISOString(),
+  });
+  res.json({
+    path: `/${format === 'view' ? 'open' : 'download'}/${encodeURIComponent(token)}`,
+    expiresIn: format === 'view' ? 30 : 120,
+  });
+});
+
 // 重新生成（有转写稿时只重跑 LLM；?full=1 重新转写；?provider=local|xfyun|dashscope 换引擎重转）
 app.post('/api/recordings/:id/reprocess', (req, res) => {
-  const rec = store.get(req.params.id);
+  const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
   const patch = { status: 'uploaded', error: null };
   if (req.query.full === '1') patch.transcript = null;
@@ -93,7 +178,7 @@ app.post('/api/recordings/:id/reprocess', (req, res) => {
 // 批量重命名说话人（"说话人2" -> "张总"）
 app.patch('/api/recordings/:id/speakers', (req, res) => {
   const { from, to } = req.body || {};
-  const rec = store.get(req.params.id);
+  const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec || !rec.transcript) return res.status(404).json({ error: 'not found' });
   if (!from || !to || !String(to).trim()) return res.status(400).json({ error: '缺少 from/to' });
   let count = 0;
@@ -104,7 +189,7 @@ app.patch('/api/recordings/:id/speakers', (req, res) => {
 
 // 修改单句：说话人 和/或 文字内容
 app.patch('/api/recordings/:id/segments/:idx', (req, res) => {
-  const rec = store.get(req.params.id);
+  const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec || !rec.transcript) return res.status(404).json({ error: 'not found' });
   const seg = rec.transcript.segments[Number(req.params.idx)];
   if (!seg) return res.status(404).json({ error: 'segment not found' });
@@ -123,21 +208,24 @@ app.patch('/api/recordings/:id/segments/:idx', (req, res) => {
 const vocabulary = require('./asr/vocabulary');
 
 app.get('/api/hotwords', (req, res) => {
+  const suffix = req.user.id === 'local' ? '' : `:${req.user.id}`;
   res.json({
-    words: store.getMeta('hotwords') || [],
-    vocabularyId: store.getMeta('vocabularyId') || null,
+    words: store.getMeta(`hotwords${suffix}`) || [],
+    vocabularyId: store.getMeta(`vocabularyId${suffix}`) || null,
   });
 });
 
 app.put('/api/hotwords', async (req, res) => {
   const words = [...new Set(((req.body || {}).words || []).map(w => String(w).trim()).filter(Boolean))];
   if (words.length > 500) return res.status(400).json({ error: '热词表最多 500 个（单表容量上限），请精简' });
-  store.setMeta('hotwords', words);
+  const suffix = req.user.id === 'local' ? '' : `:${req.user.id}`;
+  store.setMeta(`hotwords${suffix}`, words);
   if ((process.env.ASR_PROVIDER || '').toLowerCase() !== 'dashscope' || !process.env.DASHSCOPE_API_KEY) {
     return res.json({ ok: true, words, vocabularyId: null, note: '当前非百炼模式，仅保存未同步' });
   }
   try {
-    const id = await vocabulary.sync(words);
+    const id = await vocabulary.sync(words, req.user.id);
+    store.setMeta(`vocabularyId${suffix}`, id);
     res.json({ ok: true, words, vocabularyId: id });
   } catch (e) {
     res.status(500).json({ error: '热词已保存，但同步百炼失败: ' + e.message });
@@ -146,7 +234,7 @@ app.put('/api/hotwords', async (req, res) => {
 
 // 导出 Word（总结 + 思维导图大纲 + 转写稿全文）
 app.get('/api/recordings/:id/export/docx', async (req, res) => {
-  const rec = store.get(req.params.id);
+  const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
   try {
     const buf = await buildDocx(rec);
@@ -164,7 +252,7 @@ function safeExportName(rec) {
 }
 
 app.get('/api/recordings/:id/export/txt', (req, res) => {
-  const rec = store.get(req.params.id);
+  const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
   const name = `${safeExportName(rec)}.txt`;
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -173,7 +261,7 @@ app.get('/api/recordings/:id/export/txt', (req, res) => {
 });
 
 app.get('/api/recordings/:id/export/srt', (req, res) => {
-  const rec = store.get(req.params.id);
+  const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
   const name = `${safeExportName(rec)}.srt`;
   res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
@@ -188,4 +276,7 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`声图 SoundMap 已启动: http://localhost:${PORT}`);
   console.log(`ASR provider: ${require('./asr').name} | LLM provider: ${require('./llm').name}`);
+  if (!media.hasPersistentSecret) {
+    console.warn('[security] 未设置 MEDIA_SIGNING_SECRET，当前使用进程级临时密钥；多实例/正式环境必须配置。');
+  }
 });

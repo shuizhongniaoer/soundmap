@@ -7,9 +7,12 @@ const BASE = (process.env.LOCAL_ASR_URL || 'http://127.0.0.1:8100').replace(/\/$
 
 module.exports = {
   name: 'local',
-  async transcribe({ filename }) {
+  async transcribe({ filename, userId }) {
     let hotwords = [];
-    try { hotwords = require('../store').getMeta('hotwords') || []; } catch { /* ignore */ }
+    try {
+      const suffix = userId && userId !== 'local' ? `:${userId}` : '';
+      hotwords = require('../store').getMeta(`hotwords${suffix}`) || [];
+    } catch { /* ignore */ }
     let res;
     try {
       res = await fetch(`${BASE}/transcribe`, {

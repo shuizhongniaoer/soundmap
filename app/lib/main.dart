@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'pages/list_page.dart';
+import 'pages/auth_gate.dart';
 
 const kAccent = Color(0xFF2E5A88);
 
@@ -17,7 +17,7 @@ class SoundMapApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: kAccent),
         useMaterial3: true,
       ),
-      home: const ListPage(),
+      home: const AuthGate(),
     );
   }
 }
