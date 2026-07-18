@@ -17,13 +17,15 @@
   .tab.on { background: var(--card); color: var(--accent); font-weight: 600; }
   .panel { background: var(--card); border-radius: 0 12px 12px 12px; padding: 22px; min-height: 380px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
   .seg { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0f3f6; font-size: 14px; line-height: 1.7; }
+  .seg.active { background: #eef5fc; box-shadow: inset 3px 0 var(--accent); }
   .seg .who { color: var(--accent); font-weight: 600; white-space: nowrap; cursor: pointer; }
   .seg .who:hover { text-decoration: underline; }
-  .seg .txt { flex: 1; cursor: text; border-radius: 4px; padding: 0 4px; }
+  .seg .txt { flex: 1; cursor: pointer; border-radius: 4px; padding: 0 4px; }
   .seg .txt:hover { background: #f2f6fa; }
   .seg .txt[contenteditable="true"] { background: #fffbe8; outline: 2px solid #e2c46d; }
   .seg .txt.fixed { border-bottom: 1px dashed #d9a441; }
-  .seg .ts { color: var(--muted); font-size: 12px; white-space: nowrap; padding-top: 3px; }
+  .seg .ts { color: var(--muted); font-size: 12px; white-space: nowrap; padding-top: 3px; cursor: pointer; }
+  .seg .ts:hover { color: var(--accent); text-decoration: underline; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-bottom: 12px; margin-bottom: 8px; border-bottom: 1px solid #e4e9ef; }
   .chip { background: #eef3f8; color: var(--accent); border-radius: 20px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
   .chip:hover { background: #dbe7f2; }
@@ -44,8 +46,10 @@
   <a class="back" href="/">← 返回列表</a>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
     <h1 id="title">加载中…</h1>
-    <div style="display:flex;gap:8px;flex-shrink:0">
+    <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
       <button class="re" onclick="exportWord()">导出 Word</button>
+      <button class="re" onclick="exportTranscript('txt')">导出 TXT</button>
+      <button class="re" onclick="exportTranscript('srt')">导出 SRT</button>
       <button class="re" id="reprocess-btn" onclick="reprocess()">重新生成</button>
     </div>
   </div>
@@ -76,6 +80,9 @@
 const id = new URLSearchParams(location.search).get('id');
 let rec = null, mmRendered = false;
 let pollTimer = null;
+let renderedTranscriptSignature = null;
+let activeSegment = -1;
+const player = document.getElementById('player');
 
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
@@ -85,7 +92,7 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   if (t.dataset.p === 'mindmap') renderMindmap();
 });
 
-const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 function scheduleLoad(delay = 2500) {
@@ -108,7 +115,8 @@ async function load() {
     rec = await res.json();
     updateProcessButton();
     document.getElementById('title').textContent = rec.title || rec.originalName;
-    document.getElementById('player').src = '/uploads/' + rec.filename;
+    const audioSrc = '/uploads/' + rec.filename;
+    if (player.getAttribute('src') !== audioSrc) player.src = audioSrc;
 
     const tEl = document.getElementById('p-transcript');
     if (rec.status === 'error') {
@@ -140,17 +148,64 @@ async function load() {
 function renderTranscript() {
   const tEl = document.getElementById('p-transcript');
   const segs = rec.transcript.segments;
+  const signature = JSON.stringify(segs.map(s => [s.start, s.end, s.speaker, s.text, s.orig]));
+  if (signature === renderedTranscriptSignature && tEl.querySelector('.seg')) return;
+  renderedTranscriptSignature = signature;
   const speakers = [...new Set(segs.map(s => s.speaker))];
   tEl.innerHTML =
     `<div class="chips">${speakers.map(sp => `<span class="chip" data-sp="${esc(sp)}">${esc(sp)} ✏️</span>`).join('')}
-     <span class="hint">点名字批量重命名 · 点每句前的说话人单独修改 · 点文字直接改错字</span></div>` +
+     <span class="hint">点时间或文字跳转播放 · 双击文字改错字 · 点说话人修改姓名</span></div>` +
     segs.map((s, i) =>
-      `<div class="seg"><span class="ts">${fmt(s.start)}</span><span class="who" data-i="${i}" title="修改这句的说话人">${esc(s.speaker)}</span><span class="txt${s.orig ? ' fixed' : ''}" data-i="${i}" title="${s.orig ? 'AI 已校对，识别原文: ' + esc(s.orig) : '点击修改文字'}">${esc(s.text)}</span></div>`
+      `<div class="seg" data-i="${i}" data-start="${Number(s.start) || 0}" data-end="${Number(s.end) || 0}"><span class="ts" data-i="${i}" title="从这里播放">${fmt(s.start)}</span><span class="who" data-i="${i}" title="修改这句的说话人">${esc(s.speaker)}</span><span class="txt${s.orig ? ' fixed' : ''}" data-i="${i}" title="${s.orig ? 'AI 已校对，识别原文: ' + esc(s.orig) + '（双击修改）' : '点击播放，双击修改文字'}">${esc(s.text)}</span></div>`
     ).join('');
   tEl.querySelectorAll('.chip').forEach(c => c.onclick = () => renameSpeaker(c.dataset.sp));
   tEl.querySelectorAll('.who').forEach(w => w.onclick = () => editSegSpeaker(+w.dataset.i));
-  tEl.querySelectorAll('.txt').forEach(t => t.onclick = () => editSegText(t, +t.dataset.i));
+  tEl.querySelectorAll('.ts').forEach(t => t.onclick = () => seekToSegment(+t.dataset.i));
+  tEl.querySelectorAll('.txt').forEach(t => {
+    t.onclick = () => {
+      if (!window.getSelection().toString()) seekToSegment(+t.dataset.i);
+    };
+    t.ondblclick = e => { e.preventDefault(); editSegText(t, +t.dataset.i); };
+  });
+  updateActiveSegment();
 }
+
+function seekToSegment(i) {
+  const seg = rec && rec.transcript && rec.transcript.segments[i];
+  if (!seg) return;
+  player.currentTime = Number(seg.start) || 0;
+  player.play().catch(() => {});
+  setActiveSegment(i, true);
+}
+
+function setActiveSegment(i, scroll = false) {
+  if (i === activeSegment && !scroll) return;
+  activeSegment = i;
+  document.querySelectorAll('#p-transcript .seg').forEach((el, index) =>
+    el.classList.toggle('active', index === i));
+  if (scroll && i >= 0) {
+    const el = document.querySelector(`#p-transcript .seg[data-i="${i}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+function updateActiveSegment() {
+  const segs = rec && rec.transcript && rec.transcript.segments;
+  if (!segs || !segs.length) return;
+  const time = player.currentTime;
+  let found = -1;
+  for (let i = 0; i < segs.length; i++) {
+    const start = Number(segs[i].start) || 0;
+    const nextStart = i + 1 < segs.length ? Number(segs[i + 1].start) : Infinity;
+    const rawEnd = Number(segs[i].end);
+    const end = rawEnd > start ? rawEnd : nextStart;
+    if (time >= start && time < end) { found = i; break; }
+  }
+  setActiveSegment(found);
+}
+
+player.addEventListener('timeupdate', updateActiveSegment);
+player.addEventListener('seeked', updateActiveSegment);
 
 async function patchJSON(url, body) {
   const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -218,6 +273,10 @@ function download(url, name) {
 
 function exportWord() {
   location.href = `/api/recordings/${id}/export/docx`;
+}
+
+function exportTranscript(format) {
+  location.href = `/api/recordings/${id}/export/${format}`;
 }
 
 function exportMindmapMD() {

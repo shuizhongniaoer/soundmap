@@ -7,7 +7,8 @@ const multer = require('multer');
 
 const store = require('./store');
 const pipeline = require('./pipeline');
-const { buildDocx } = require('./export');
+const { buildDocx, buildTxt, buildSrt } = require('./export');
+const { searchRecordings } = require('./search');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -61,7 +62,11 @@ app.post('/api/recordings', upload.single('audio'), (req, res) => {
 });
 
 app.get('/api/recordings', (req, res) => {
-  res.json(store.list().map(({ transcript, summary, mindmap, ...meta }) => meta));
+  const results = searchRecordings(store.list(), req.query.q);
+  res.json(results.map(({ rec, match }) => {
+    const { transcript, summary, mindmap, ...meta } = rec;
+    return { ...meta, ...(match ? { match } : {}) };
+  }));
 });
 
 app.get('/api/recordings/:id', (req, res) => {
@@ -152,6 +157,28 @@ app.get('/api/recordings/:id/export/docx', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: '导出失败: ' + e.message });
   }
+});
+
+function safeExportName(rec) {
+  return (rec.title || rec.originalName || '录音记录').replace(/[/\\:*?"<>|]/g, '_');
+}
+
+app.get('/api/recordings/:id/export/txt', (req, res) => {
+  const rec = store.get(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'not found' });
+  const name = `${safeExportName(rec)}.txt`;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="transcript.txt"; filename*=UTF-8''${encodeURIComponent(name)}`);
+  res.send('\uFEFF' + buildTxt(rec));
+});
+
+app.get('/api/recordings/:id/export/srt', (req, res) => {
+  const rec = store.get(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'not found' });
+  const name = `${safeExportName(rec)}.srt`;
+  res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="transcript.srt"; filename*=UTF-8''${encodeURIComponent(name)}`);
+  res.send('\uFEFF' + buildSrt(rec));
 });
 
 app.use((err, req, res, next) => {

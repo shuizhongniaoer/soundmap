@@ -70,19 +70,23 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 - 思维导图：可交互 markmap 渲染
 - 转写稿修正：说话人批量重命名、单句改派、文字纠错（点击即改）
 - 重新生成只重跑 LLM，不重复付费转写
-- 导出：Word（总结+导图大纲+全文转写稿）、思维导图 PNG / Markdown
+- 录音库全文搜索：标题、转写稿、说话人和 AI 总结
+- 转写稿与音频联动：点句子跳转播放，播放时高亮当前句
+- 导出：Word（总结+导图大纲+全文转写稿）、TXT、SRT、思维导图 PNG / Markdown
 
 ## API
 
 | Method | Path | 说明 |
 |---|---|---|
 | POST | /api/recordings | 上传音频（form-data: audio, title?），异步处理 |
-| GET | /api/recordings | 录音列表 |
+| GET | /api/recordings | 录音列表（`?q=` 全文搜索） |
 | GET | /api/recordings/:id | 详情（transcript / summary / mindmap） |
 | POST | /api/recordings/:id/reprocess | 重新生成（?full=1 强制重新转写） |
 | PATCH | /api/recordings/:id/speakers | 批量重命名说话人 {from, to} |
 | PATCH | /api/recordings/:id/segments/:idx | 修改单句 {speaker?, text?} |
 | GET | /api/recordings/:id/export/docx | 导出 Word |
+| GET | /api/recordings/:id/export/txt | 导出纯文本转写稿 |
+| GET | /api/recordings/:id/export/srt | 导出 SRT 字幕 |
 
 状态机：`uploaded → transcribing → summarizing → done | error`
 

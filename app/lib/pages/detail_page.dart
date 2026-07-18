@@ -91,17 +91,21 @@ window.onload = function() {
               tooltip: '导出',
               onSelected: (v) async {
                 final base = await Api.base();
-                final url = v == 'word'
-                    ? '$base/api/recordings/${widget.id}/export/docx'
-                    : '$base/detail.html?id=${widget.id}';
+                final url = switch (v) {
+                  'word' => '$base/api/recordings/${widget.id}/export/docx',
+                  'txt' => '$base/api/recordings/${widget.id}/export/txt',
+                  'srt' => '$base/api/recordings/${widget.id}/export/srt',
+                  _ => '$base/detail.html?id=${widget.id}',
+                };
                 await launchUrl(Uri.parse(url),
                     mode: LaunchMode.externalApplication);
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'word', child: Text('导出 Word')),
+                PopupMenuItem(value: 'txt', child: Text('导出 TXT')),
+                PopupMenuItem(value: 'srt', child: Text('导出 SRT 字幕')),
                 PopupMenuItem(
-                    value: 'web',
-                    child: Text('浏览器打开（可导出导图 PNG/Markdown）')),
+                    value: 'web', child: Text('浏览器打开（可导出导图 PNG/Markdown）')),
               ],
             ),
             PopupMenuButton<String>(
@@ -113,10 +117,8 @@ window.onload = function() {
                 _load();
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(
-                    value: 'llm', child: Text('重新生成总结/导图（免费）')),
-                PopupMenuItem(
-                    value: 'full', child: Text('重新转写+总结（应用最新热词）')),
+                PopupMenuItem(value: 'llm', child: Text('重新生成总结/导图（免费）')),
+                PopupMenuItem(value: 'full', child: Text('重新转写+总结（应用最新热词）')),
               ],
             ),
           ],
@@ -177,7 +179,8 @@ window.onload = function() {
                   style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ]),
             const SizedBox(height: 4),
-            Text(s['text'] as String? ?? '', style: const TextStyle(height: 1.5)),
+            Text(s['text'] as String? ?? '',
+                style: const TextStyle(height: 1.5)),
           ],
         );
       },

@@ -18,8 +18,12 @@ class Api {
     await sp.setString('server_url', url.replaceAll(RegExp(r'/$'), ''));
   }
 
-  static Future<List<dynamic>> list() async {
-    final res = await http.get(Uri.parse('${await base()}/api/recordings'));
+  static Future<List<dynamic>> list({String query = ''}) async {
+    final root = Uri.parse('${await base()}/api/recordings');
+    final uri = query.trim().isEmpty
+        ? root
+        : root.replace(queryParameters: {'q': query.trim()});
+    final res = await http.get(uri);
     if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
     return jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
   }

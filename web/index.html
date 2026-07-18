@@ -25,6 +25,7 @@
   .b-error { background: #fdeaea; color: #c0392b; }
   .b-working { background: #fff4e0; color: #b26a00; }
   .empty { color: var(--muted); text-align: center; padding: 24px; }
+  .match { font-size: 12px; color: #526679; margin-top: 5px; max-width: 650px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -63,6 +64,7 @@
   </div>
 
   <div class="card">
+    <input type="text" id="search" placeholder="搜索标题、转写全文、说话人或 AI 总结" style="margin:0 0 10px">
     <div id="list"><div class="empty">暂无录音，先上传一个试试</div></div>
   </div>
 </div>
@@ -192,16 +194,32 @@ const STATUS = {
   uploaded: ['排队中', 'b-working'], transcribing: ['转写中', 'b-working'],
   summarizing: ['AI 总结中', 'b-working'], done: ['完成', 'b-done'], error: ['失败', 'b-error'],
 };
+const searchInput = document.getElementById('search');
+let searchTimer = null;
+
+const escapeHtml = value => String(value || '').replace(/[&<>"']/g, c => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[c]));
+
+searchInput.oninput = () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(refresh, 250);
+};
 
 async function refresh() {
-  const list = await (await fetch('/api/recordings')).json();
+  const query = searchInput.value.trim();
+  const list = await (await fetch('/api/recordings' + (query ? `?q=${encodeURIComponent(query)}` : ''), { cache: 'no-store' })).json();
   const el = document.getElementById('list');
-  if (!list.length) return;
+  if (!list.length) {
+    el.innerHTML = `<div class="empty">${query ? '没有找到匹配的录音' : '暂无录音，先上传一个试试'}</div>`;
+    return;
+  }
   el.innerHTML = list.map(r => {
     const [label, cls] = STATUS[r.status] || [r.status, ''];
     return `<div class="item" onclick="location.href='/detail.html?id=${r.id}'">
-      <div><div class="t">${r.title || r.originalName}</div>
-      <div class="meta">${new Date(r.createdAt).toLocaleString()} · ${(r.size / 1048576).toFixed(1)} MB</div></div>
+      <div><div class="t">${escapeHtml(r.title || r.originalName)}</div>
+      <div class="meta">${new Date(r.createdAt).toLocaleString()} · ${(r.size / 1048576).toFixed(1)} MB</div>
+      ${r.match ? `<div class="match">${escapeHtml(r.match)}</div>` : ''}</div>
       <span class="badge ${cls}">${label}</span></div>`;
   }).join('');
 }

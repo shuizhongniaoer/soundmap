@@ -10,6 +10,5 @@ macos/
 linux/
 windows/
 web/
-test/
 analysis_options.yaml
 .metadata

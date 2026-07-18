@@ -6,7 +6,39 @@ const {
 const FONT = { ascii: 'Calibri', hAnsi: 'Calibri', eastAsia: 'Microsoft YaHei' };
 const ACCENT = '2E5A88';
 
-const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+function transcriptSegments(rec) {
+  return (rec.transcript && Array.isArray(rec.transcript.segments))
+    ? rec.transcript.segments : [];
+}
+
+function buildTxt(rec) {
+  const title = rec.title || rec.originalName || '录音记录';
+  const lines = [title, ''];
+  for (const seg of transcriptSegments(rec)) {
+    lines.push(`[${fmt(Number(seg.start) || 0)}] ${seg.speaker || ''}：${seg.text || ''}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+function srtTime(seconds) {
+  const ms = Math.max(0, Math.round((Number(seconds) || 0) * 1000));
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  const secs = Math.floor((ms % 60000) / 1000);
+  const millis = ms % 1000;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(millis).padStart(3, '0')}`;
+}
+
+function buildSrt(rec) {
+  return transcriptSegments(rec).map((seg, i) => {
+    const start = Number(seg.start) || 0;
+    const rawEnd = Number(seg.end);
+    const end = Number.isFinite(rawEnd) && rawEnd > start ? rawEnd : start + 2;
+    return `${i + 1}\n${srtTime(start)} --> ${srtTime(end)}\n${seg.speaker ? seg.speaker + '：' : ''}${seg.text || ''}`;
+  }).join('\n\n') + (transcriptSegments(rec).length ? '\n' : '');
+}
 
 const p = (text, opts = {}) => new Paragraph({
   spacing: { after: 120, line: 300 },
@@ -90,4 +122,4 @@ async function buildDocx(rec) {
   return Packer.toBuffer(doc);
 }
 
-module.exports = { buildDocx };
+module.exports = { buildDocx, buildTxt, buildSrt, srtTime };

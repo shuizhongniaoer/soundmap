@@ -26,8 +26,10 @@ class _ListPageState extends State<ListPage> {
   List<dynamic> _items = [];
   String? _error;
   Timer? _timer;
+  Timer? _searchTimer;
   StreamSubscription? _shareSub;
   List<String> _pending = [];
+  String _query = '';
 
   @override
   void initState() {
@@ -49,6 +51,7 @@ class _ListPageState extends State<ListPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _searchTimer?.cancel();
     _shareSub?.cancel();
     super.dispose();
   }
@@ -112,8 +115,12 @@ class _ListPageState extends State<ListPage> {
 
   Future<void> _refresh() async {
     try {
-      final items = await Api.list();
-      if (mounted) setState(() { _items = items; _error = null; });
+      final items = await Api.list(query: _query);
+      if (mounted)
+        setState(() {
+          _items = items;
+          _error = null;
+        });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
@@ -139,8 +146,8 @@ class _ListPageState extends State<ListPage> {
   }
 
   void _openDetail(String id) {
-    Navigator.push(context,
-        MaterialPageRoute(builder: (_) => DetailPage(id: id)))
+    Navigator.push(
+            context, MaterialPageRoute(builder: (_) => DetailPage(id: id)))
         .then((_) => _refresh());
   }
 
@@ -161,7 +168,8 @@ class _ListPageState extends State<ListPage> {
                 controller: ctrl,
                 decoration: const InputDecoration(
                     labelText: '服务器地址',
-                    helperText: '模拟器: http://10.0.2.2:3000\n真机: http://电脑局域网IP:3000'),
+                    helperText:
+                        '模拟器: http://10.0.2.2:3000\n真机: http://电脑局域网IP:3000'),
               ),
               const SizedBox(height: 12),
               RadioListTile<String>(
@@ -183,7 +191,8 @@ class _ListPageState extends State<ListPage> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
             FilledButton(
                 onPressed: () async {
                   await sp.setString('rec_quality', quality);
@@ -206,7 +215,8 @@ class _ListPageState extends State<ListPage> {
       appBar: AppBar(
         title: const Text('声图'),
         actions: [
-          IconButton(onPressed: _pickAndUpload, icon: const Icon(Icons.upload_file)),
+          IconButton(
+              onPressed: _pickAndUpload, icon: const Icon(Icons.upload_file)),
           IconButton(onPressed: _editServer, icon: const Icon(Icons.settings)),
         ],
       ),
@@ -219,60 +229,77 @@ class _ListPageState extends State<ListPage> {
               TextButton(onPressed: _retryPending, child: const Text('重试')),
             ],
           ),
-        Expanded(child: RefreshIndicator(
-        onRefresh: _refresh,
-        child: _error != null
-            ? ListView(children: [
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text('连接服务器失败：$_error\n\n请检查右上角设置里的服务器地址',
-                      style: const TextStyle(color: Colors.red)),
-                )
-              ])
-            : _items.isEmpty
-                ? ListView(children: const [
-                    Padding(
-                      padding: EdgeInsets.all(48),
-                      child: Center(child: Text('暂无录音，点右下角开始录音')),
-                    )
-                  ])
-                : ListView.separated(
-                    itemCount: _items.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (ctx, i) {
-                      final r = _items[i] as Map<String, dynamic>;
-                      final status = r['status'] as String? ?? '';
-                      final done = status == 'done';
-                      final err = status == 'error';
-                      return ListTile(
-                        title: Text(r['title'] as String? ??
-                            r['originalName'] as String? ?? '未命名'),
-                        subtitle: Text((r['createdAt'] as String? ?? '')
-                            .replaceFirst('T', ' ')
-                            .split('.')
-                            .first),
-                        trailing: Chip(
-                          label: Text(_statusLabel[status] ?? status,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: err
-                                      ? Colors.red
-                                      : done
-                                          ? Colors.green.shade800
-                                          : Colors.orange.shade800)),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        onTap: () => _openDetail(r['id'] as String),
-                      );
-                    },
-                  ),
-      )),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: TextField(
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: '搜索标题、转写全文、说话人或 AI 总结',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (value) {
+              _query = value;
+              _searchTimer?.cancel();
+              _searchTimer = Timer(const Duration(milliseconds: 300), _refresh);
+            },
+          ),
+        ),
+        Expanded(
+            child: RefreshIndicator(
+          onRefresh: _refresh,
+          child: _error != null
+              ? ListView(children: [
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text('连接服务器失败：$_error\n\n请检查右上角设置里的服务器地址',
+                        style: const TextStyle(color: Colors.red)),
+                  )
+                ])
+              : _items.isEmpty
+                  ? ListView(children: const [
+                      Padding(
+                        padding: EdgeInsets.all(48),
+                        child: Center(child: Text('暂无录音或没有匹配的搜索结果')),
+                      )
+                    ])
+                  : ListView.separated(
+                      itemCount: _items.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (ctx, i) {
+                        final r = _items[i] as Map<String, dynamic>;
+                        final status = r['status'] as String? ?? '';
+                        final done = status == 'done';
+                        final err = status == 'error';
+                        return ListTile(
+                          title: Text(r['title'] as String? ??
+                              r['originalName'] as String? ??
+                              '未命名'),
+                          subtitle: Text((r['createdAt'] as String? ?? '')
+                              .replaceFirst('T', ' ')
+                              .split('.')
+                              .first),
+                          trailing: Chip(
+                            label: Text(_statusLabel[status] ?? status,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: err
+                                        ? Colors.red
+                                        : done
+                                            ? Colors.green.shade800
+                                            : Colors.orange.shade800)),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onTap: () => _openDetail(r['id'] as String),
+                        );
+                      },
+                    ),
+        )),
       ]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const RecordPage()))
-              .then((id) {
+              MaterialPageRoute(builder: (_) => const RecordPage())).then((id) {
             _refresh();
             _loadPending();
             if (id is String) _openDetail(id);
