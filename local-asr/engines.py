@@ -275,6 +275,7 @@ class Firered2Engine:
         from fireredasr2s import FireRedAsr2System, FireRedAsr2SystemConfig
 
         use_gpu = os.environ.get("FIRERED2_GPU", "0") == "1"  # NVIDIA 上设 1，12 倍速
+        print("[firered2] 开始加载 4 个模型（VAD/LID/AED/Punc），CPU 上约需 2~5 分钟，期间无输出属正常…", flush=True)
         cfg = FireRedAsr2SystemConfig(
             os.path.join(pm, "FireRedVAD", "VAD"),
             os.path.join(pm, "FireRedLID"),
@@ -290,6 +291,7 @@ class Firered2Engine:
             enable_vad=1, enable_lid=1, enable_punc=1,
         )
         self.system = FireRedAsr2System(cfg)
+        print("[firered2] 4 个模型全部就绪", flush=True)
 
     def transcribe(self, path, hotwords):  # hotwords 不支持
         wav = to_wav16k(path)
