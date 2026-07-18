@@ -105,7 +105,11 @@ app.patch('/api/recordings/:id/segments/:idx', (req, res) => {
   if (!seg) return res.status(404).json({ error: 'segment not found' });
   const { speaker, text } = req.body || {};
   if (speaker != null && String(speaker).trim()) seg.speaker = String(speaker).trim();
-  if (text != null && String(text).trim()) seg.text = String(text).trim();
+  if (text != null && String(text).trim()) {
+    seg.text = String(text).trim();
+    // Reverting to the saved ASR text also clears the AI-correction marker.
+    if (seg.orig && seg.text === seg.orig) delete seg.orig;
+  }
   store.update(rec.id, { transcript: rec.transcript });
   res.json({ ok: true, segment: seg });
 });

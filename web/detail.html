@@ -36,6 +36,7 @@
   .status { text-align: center; color: var(--muted); padding: 80px 0; font-size: 15px; }
   .err { color: #c0392b; }
   button.re { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
+  button.re:disabled { cursor: wait; opacity: .55; }
 </style>
 </head>
 <body>
@@ -45,7 +46,7 @@
     <h1 id="title">加载中…</h1>
     <div style="display:flex;gap:8px;flex-shrink:0">
       <button class="re" onclick="exportWord()">导出 Word</button>
-      <button class="re" onclick="reprocess()">重新生成</button>
+      <button class="re" id="reprocess-btn" onclick="reprocess()">重新生成</button>
     </div>
   </div>
   <audio id="player" controls preload="none"></audio>
@@ -74,6 +75,7 @@
 <script>
 const id = new URLSearchParams(location.search).get('id');
 let rec = null, mmRendered = false;
+let pollTimer = null;
 
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
@@ -86,28 +88,53 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
 const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-async function load() {
-  rec = await (await fetch('/api/recordings/' + id)).json();
-  document.getElementById('title').textContent = rec.title || rec.originalName;
-  document.getElementById('player').src = '/uploads/' + rec.filename;
+function scheduleLoad(delay = 2500) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(load, delay);
+}
 
-  const tEl = document.getElementById('p-transcript');
-  if (rec.status === 'error') {
-    tEl.innerHTML = `<div class="status err">处理失败：${esc(rec.error || '')}</div>`;
-    return;
+function updateProcessButton() {
+  const btn = document.getElementById('reprocess-btn');
+  const working = rec && !['done', 'error'].includes(rec.status);
+  btn.disabled = !!working;
+  btn.textContent = working ? '处理中…' : '重新生成';
+}
+
+async function load() {
+  clearTimeout(pollTimer);
+  try {
+    const res = await fetch('/api/recordings/' + id, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    rec = await res.json();
+    updateProcessButton();
+    document.getElementById('title').textContent = rec.title || rec.originalName;
+    document.getElementById('player').src = '/uploads/' + rec.filename;
+
+    const tEl = document.getElementById('p-transcript');
+    if (rec.status === 'error') {
+      tEl.innerHTML = `<div class="status err">处理失败：${esc(rec.error || '')}</div>`;
+      return;
+    }
+    if (rec.transcript) renderTranscript();
+    if (rec.summary) {
+      const s = rec.summary;
+      document.getElementById('p-summary').innerHTML =
+        (s.type ? `<span style="display:inline-block;background:#eef3f8;color:var(--accent);border-radius:20px;padding:3px 14px;font-size:12px;margin-bottom:6px">${esc(s.type)}</span>` : '') +
+        `<h3>摘要</h3><div class="abstract">${esc(s.abstract || '')}</div>` +
+        `<h3>关键要点</h3><ul>${(s.key_points || []).map(k => `<li>${esc(k)}</li>`).join('')}</ul>` +
+        ((s.todos || []).length ? `<h3>待办事项</h3><ul>${s.todos.map(t => `<li>${esc(t.task)}${t.owner ? `（${esc(t.owner)}）` : ''}</li>`).join('')}</ul>` : '') +
+        ((s.quotes || []).length ? `<h3>原话摘录</h3><ul>${s.quotes.map(q => `<li>"${esc(q)}"</li>`).join('')}</ul>` : '');
+    }
+    if (!['done', 'error'].includes(rec.status)) scheduleLoad();
+    else if (!document.getElementById('p-mindmap').hidden) renderMindmap();
+  } catch (error) {
+    console.warn('状态轮询失败，将自动重试:', error);
+    const tEl = document.getElementById('p-transcript');
+    if (!rec || !rec.transcript) {
+      tEl.innerHTML = '<div class="status">连接暂时中断，正在自动重试…</div>';
+    }
+    scheduleLoad();
   }
-  if (rec.transcript) renderTranscript();
-  if (rec.summary) {
-    const s = rec.summary;
-    document.getElementById('p-summary').innerHTML =
-      (s.type ? `<span style="display:inline-block;background:#eef3f8;color:var(--accent);border-radius:20px;padding:3px 14px;font-size:12px;margin-bottom:6px">${esc(s.type)}</span>` : '') +
-      `<h3>摘要</h3><div class="abstract">${esc(s.abstract || '')}</div>` +
-      `<h3>关键要点</h3><ul>${(s.key_points || []).map(k => `<li>${esc(k)}</li>`).join('')}</ul>` +
-      ((s.todos || []).length ? `<h3>待办事项</h3><ul>${s.todos.map(t => `<li>${esc(t.task)}${t.owner ? `（${esc(t.owner)}）` : ''}</li>`).join('')}</ul>` : '') +
-      ((s.quotes || []).length ? `<h3>原话摘录</h3><ul>${s.quotes.map(q => `<li>"${esc(q)}"</li>`).join('')}</ul>` : '');
-  }
-  if (rec.status !== 'done') setTimeout(load, 2500);
-  else if (!document.getElementById('p-mindmap').hidden) renderMindmap();
 }
 
 function renderTranscript() {
@@ -254,10 +281,18 @@ async function reprocess() {
       q += `&provider=${p.trim()}`;
     }
   }
-  await fetch(`/api/recordings/${id}/reprocess${q}`, { method: 'POST' });
-  mmRendered = false;
-  document.getElementById('p-transcript').innerHTML = '<div class="status">重新处理中…</div>';
-  load();
+  try {
+    const res = await fetch(`/api/recordings/${id}/reprocess${q}`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+    mmRendered = false;
+    rec = { ...(rec || {}), status: 'uploaded', ...(full ? { transcript: null } : {}) };
+    updateProcessButton();
+    document.getElementById('p-transcript').innerHTML = '<div class="status">重新处理中…</div>';
+    scheduleLoad(300);
+  } catch (error) {
+    alert('重新生成失败: ' + error.message);
+    scheduleLoad(0);
+  }
 }
 
 load();

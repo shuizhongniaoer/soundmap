@@ -6,6 +6,7 @@ const { execFileSync } = require('child_process');
 const store = require('./store');
 const asr = require('./asr');
 const llm = require('./llm');
+const { applyCorrections } = require('./llm/proofread');
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 
@@ -75,17 +76,9 @@ async function run(id) {
       try {
         const hotwords = store.getMeta('hotwords') || [];
         const corrections = await llm.proofread(transcript.segments, hotwords);
-        let fixed = 0;
-        for (const c of corrections) {
-          const seg = transcript.segments[c.i];
-          const text = (c.text || '').trim();
-          if (seg && text && text !== seg.text) {
-            seg.orig = seg.text;
-            seg.text = text;
-            fixed++;
-          }
-        }
+        const { fixed, rejected } = applyCorrections(transcript.segments, corrections);
         if (fixed) console.log(`[pipeline] ${id} LLM 校对修正 ${fixed} 处`);
+        if (rejected) console.warn(`[pipeline] ${id} 拒绝 ${rejected} 处过度校对`);
       } catch (e) {
         console.warn(`[pipeline] ${id} 校对跳过:`, e.message);
       }
