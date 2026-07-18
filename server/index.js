@@ -30,7 +30,7 @@ const upload = multer({
   }),
   limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
   fileFilter: (req, file, cb) => {
-    const ok = /\.(mp3|m4a|wav|aac|ogg|opus|flac|mp4|webm|amr)$/i.test(file.originalname);
+    const ok = /\.(mp3|m4a|wav|aac|ogg|opus|flac|mp4|webm|amr|3gp)$/i.test(file.originalname);
     cb(ok ? null : new Error('不支持的文件类型'), ok);
   },
 });

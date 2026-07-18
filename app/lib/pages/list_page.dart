@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
+import '../call_recording_importer.dart';
 import 'detail_page.dart';
+import 'import_page.dart';
 import 'record_page.dart';
 
 const _statusLabel = {
@@ -24,7 +25,7 @@ class ListPage extends StatefulWidget {
   State<ListPage> createState() => _ListPageState();
 }
 
-class _ListPageState extends State<ListPage> {
+class _ListPageState extends State<ListPage> with WidgetsBindingObserver {
   List<dynamic> _items = [];
   String? _error;
   Timer? _timer;
@@ -32,12 +33,19 @@ class _ListPageState extends State<ListPage> {
   StreamSubscription? _shareSub;
   List<String> _pending = [];
   String _query = '';
+  late final CallRecordingImporter _callImporter;
+  bool _callImportRunning = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _callImporter = CallRecordingImporter(
+        userId: widget.user?['id']?.toString() ?? 'local');
     _refresh();
     _loadPending();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _autoImportCallRecordings());
     _timer = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
     // 系统分享导入：App 运行中收到分享
     _shareSub = ReceiveSharingIntent.instance
@@ -52,10 +60,43 @@ class _ListPageState extends State<ListPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _searchTimer?.cancel();
     _shareSub?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _autoImportCallRecordings();
+  }
+
+  Future<void> _autoImportCallRecordings() async {
+    if (!_callImporter.isSupported || _callImportRunning) return;
+    if (!await _callImporter.autoImportEnabled()) return;
+    if (await _callImporter.getDirectory() == null) return;
+    _callImportRunning = true;
+    try {
+      final report = await _callImporter.scanAndUpload();
+      if (report.hasChanges) {
+        await _refresh();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('已自动导入 ${report.imported} 条通话录音')));
+        }
+      } else if (report.failed > 0 && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('通话录音自动导入失败，将在下次重试')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('通话录音目录扫描失败：$error')));
+      }
+    } finally {
+      _callImportRunning = false;
+    }
   }
 
   Future<void> _handleShared(List<SharedMediaFile> files) async {
@@ -129,23 +170,16 @@ class _ListPageState extends State<ListPage> {
     }
   }
 
-  Future<void> _pickAndUpload() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.any);
-    final path = result?.files.single.path;
-    if (path == null) return;
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('上传中…')));
-    try {
-      final rec = await Api.upload(File(path));
-      _refresh();
-      if (mounted) _openDetail(rec['id'] as String);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('上传失败: $e')));
-      }
-    }
+  Future<void> _openImport() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ImportPage(userId: widget.user?['id']?.toString() ?? 'local'),
+      ),
+    );
+    await _refresh();
+    if (mounted && result is String) _openDetail(result);
   }
 
   void _openDetail(String id) {
@@ -241,7 +275,10 @@ class _ListPageState extends State<ListPage> {
         title: const Text('声图'),
         actions: [
           IconButton(
-              onPressed: _pickAndUpload, icon: const Icon(Icons.upload_file)),
+            onPressed: _openImport,
+            tooltip: '导入录音',
+            icon: const Icon(Icons.move_to_inbox_outlined),
+          ),
           IconButton(onPressed: _editServer, icon: const Icon(Icons.settings)),
         ],
       ),

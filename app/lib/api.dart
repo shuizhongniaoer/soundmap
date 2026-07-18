@@ -130,11 +130,16 @@ class Api {
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
-  static Future<Map<String, dynamic>> upload(File file, {String? title}) async {
+  static Future<Map<String, dynamic>> upload(File file,
+      {String? title, String? originalName}) async {
     final req = http.MultipartRequest(
         'POST', Uri.parse('${await base()}/api/recordings'));
     req.headers.addAll(await headers());
-    req.files.add(await http.MultipartFile.fromPath('audio', file.path));
+    req.files.add(await http.MultipartFile.fromPath(
+      'audio',
+      file.path,
+      filename: originalName,
+    ));
     if (title != null && title.isNotEmpty) req.fields['title'] = title;
     final res = await http.Response.fromStream(await req.send());
     if (res.statusCode == 401) throw const AuthRequiredException();
