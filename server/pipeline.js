@@ -36,6 +36,23 @@ function preprocess(filename) {
   }
 }
 
+// 公网地址实时探测：优先问本机 cpolar/ngrok 客户端接口（地址重启会变），失败才用 .env 固定值
+async function publicBase() {
+  try {
+    const res = await fetch('http://127.0.0.1:4040/api/tunnels', { signal: AbortSignal.timeout(2000) });
+    if (res.ok) {
+      const data = await res.json();
+      const list = (data.tunnels || []).filter(t => /^https?:/.test(t.public_url || ''));
+      const t = list.find(x => x.public_url.startsWith('https')) || list[0];
+      if (t) {
+        console.log('[pipeline] 探测到隧道公网地址:', t.public_url);
+        return t.public_url.replace(/\/$/, '');
+      }
+    }
+  } catch { /* 探测失败走 .env */ }
+  return (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '') || null;
+}
+
 async function run(id) {
   const rec = store.get(id);
   if (!rec) return;
@@ -45,9 +62,8 @@ async function run(id) {
     if (!transcript || !transcript.segments || !transcript.segments.length) {
       store.update(id, { status: 'transcribing' });
       const asrFile = preprocess(rec.filename);
-      const fileUrl = process.env.PUBLIC_BASE_URL
-        ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/uploads/${encodeURIComponent(asrFile)}`
-        : null;
+      const base = await publicBase();
+      const fileUrl = base ? `${base}/uploads/${encodeURIComponent(asrFile)}` : null;
       const provider = asr.resolve(rec.asrProvider); // 支持按录音指定引擎
       transcript = await provider.transcribe({ fileUrl, filename: asrFile });
 
