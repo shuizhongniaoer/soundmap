@@ -91,6 +91,19 @@ class FireredEngine:
             raise RuntimeError("FireRedASR 未安装：先运行 ./local-asr/setup-firered.sh（下载代码与约4GB模型）")
         import sys
         sys.path.insert(0, repo)
+        # PyTorch 2.6+ 默认 weights_only=True，拒载 FireRed 官方旧格式权重（含 argparse.Namespace）。
+        # 模型来自官方 ModelScope 仓库（可信来源），放开限制。
+        import argparse
+        import torch
+        try:
+            torch.serialization.add_safe_globals([argparse.Namespace])
+        except Exception:
+            pass
+        _orig_load = torch.load
+        def _load(*a, **k):
+            k.setdefault("weights_only", False)
+            return _orig_load(*a, **k)
+        torch.load = _load
         from fireredasr.models.fireredasr import FireRedAsr
         self.model = FireRedAsr.from_pretrained("aed", model_dir)
         self.chunker = Chunker()
