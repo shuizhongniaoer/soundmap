@@ -1,6 +1,7 @@
 # 声图 · 本地转写服务（FunASR）
 # 全家桶：FSMN-VAD 切句 + Paraformer-large 识别 + CT-Punc 标点 + CAM++ 说话人分离 + SeACo 热词
 # 首次启动会自动从 ModelScope 下载模型（约 1~2GB），之后离线运行。
+import os
 import time
 
 from fastapi import FastAPI
@@ -17,7 +18,8 @@ def get_model():
         t0 = time.time()
         from funasr import AutoModel
         _model = AutoModel(
-            model="paraformer-zh",       # Paraformer-large 中文识别
+            # 可用环境变量 LOCAL_ASR_MODEL 换模型（如电话 8k 专用模型），默认 Paraformer-large 16k
+            model=os.environ.get("LOCAL_ASR_MODEL", "paraformer-zh"),
             vad_model="fsmn-vad",        # 语音活动检测（切句）
             punc_model="ct-punc",        # 标点恢复
             spk_model="cam++",           # 说话人分离
