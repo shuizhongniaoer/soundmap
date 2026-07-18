@@ -31,7 +31,12 @@ const upload = multer({
 });
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'web')));
+app.use(express.static(path.join(__dirname, '..', 'web'), {
+  setHeaders: (res, filePath) => {
+    // HTML 不缓存，避免改版后浏览器用旧页面
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
+  },
+}));
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 // 上传录音 -> 创建记录并触发处理管线
