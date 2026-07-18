@@ -44,7 +44,7 @@ app.post('/api/recordings', upload.single('audio'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '缺少音频文件（字段名 audio）' });
   // multer 按 latin1 解码 originalname，中文文件名需转回 utf8
   const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-  const asrProvider = ['dashscope', 'xfyun', 'local', 'mock'].includes(req.body.asrProvider)
+  const asrProvider = ['dashscope', 'xfyun', 'volcengine', 'local', 'mock'].includes(req.body.asrProvider)
     ? req.body.asrProvider : null;
   const rec = store.create({
     id: crypto.randomUUID(),
@@ -76,7 +76,7 @@ app.post('/api/recordings/:id/reprocess', (req, res) => {
   if (!rec) return res.status(404).json({ error: 'not found' });
   const patch = { status: 'uploaded', error: null };
   if (req.query.full === '1') patch.transcript = null;
-  if (['dashscope', 'xfyun', 'local', 'mock'].includes(req.query.provider)) {
+  if (['dashscope', 'xfyun', 'volcengine', 'local', 'mock'].includes(req.query.provider)) {
     patch.asrProvider = req.query.provider;
     patch.transcript = null; // 换引擎必然重转
   }

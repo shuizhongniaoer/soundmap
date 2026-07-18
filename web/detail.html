@@ -248,8 +248,8 @@ async function reprocess() {
   if (full) {
     const cur = (rec && rec.asrProvider) || '默认';
     const p = prompt(
-      `转写引擎（当前: ${cur}）\n输入 local 或 xfyun 可换引擎，留空沿用当前`, '');
-    if (p && ['local', 'xfyun', 'dashscope', 'mock'].includes(p.trim())) {
+      `转写引擎（当前: ${cur}）\n输入 local / xfyun / volcengine 可换引擎，留空沿用当前`, '');
+    if (p && ['local', 'xfyun', 'volcengine', 'dashscope', 'mock'].includes(p.trim())) {
       q += `&provider=${p.trim()}`;
     }
   }
