@@ -11,7 +11,7 @@ import 'record_page.dart';
 const _statusLabel = {
   'uploaded': '排队中',
   'transcribing': '转写中',
-  'summarizing': 'AI 总结中',
+  'summarizing': 'AI 处理中',
   'done': '完成',
   'error': '失败',
 };

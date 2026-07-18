@@ -7,7 +7,7 @@ const multer = require('multer');
 
 const store = require('./store');
 const pipeline = require('./pipeline');
-const { buildDocx, buildTxt, buildSrt } = require('./export');
+const { buildDocx, buildTxt, buildSrt, buildSproutsMarkdown } = require('./export');
 const { searchRecordings } = require('./search');
 const auth = require('./auth');
 const media = require('./media');
@@ -77,6 +77,11 @@ app.get('/download/:token', async (req, res) => {
       res.setHeader('Content-Disposition', `attachment; filename="transcript.txt"; filename*=UTF-8''${encodeURIComponent(name + '.txt')}`);
       return res.send('\uFEFF' + buildTxt(rec));
     }
+    if (grant.format === 'sprouts') {
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="sprouts.md"; filename*=UTF-8''${encodeURIComponent(name + '-灵感发芽.md')}`);
+      return res.send('\uFEFF' + buildSproutsMarkdown(rec));
+    }
     res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="transcript.srt"; filename*=UTF-8''${encodeURIComponent(name + '.srt')}`);
     return res.send('\uFEFF' + buildSrt(rec));
@@ -124,7 +129,7 @@ app.post('/api/recordings', upload.single('audio'), (req, res) => {
 app.get('/api/recordings', (req, res) => {
   const results = searchRecordings(store.listForUser(req.user.id), req.query.q);
   res.json(results.map(({ rec, match }) => {
-    const { transcript, summary, mindmap, ...meta } = rec;
+    const { transcript, summary, mindmap, sprouts, ...meta } = rec;
     return { ...meta, ...(match ? { match } : {}) };
   }));
 });
@@ -147,8 +152,8 @@ app.get('/api/recordings/:id/audio', (req, res) => {
 app.post('/api/recordings/:id/export-link', (req, res) => {
   const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
-  const format = ['docx', 'txt', 'srt', 'view'].includes(req.body?.format) ? req.body.format : null;
-  if (!format) return res.status(400).json({ error: 'format must be docx, txt, srt or view' });
+  const format = ['docx', 'txt', 'srt', 'sprouts', 'view'].includes(req.body?.format) ? req.body.format : null;
+  if (!format) return res.status(400).json({ error: 'format must be docx, txt, srt, sprouts or view' });
   const token = createRawToken();
   store.createDownloadToken({
     tokenHash: hashToken(token), recordingId: rec.id, userId: req.user.id, format,
@@ -267,6 +272,15 @@ app.get('/api/recordings/:id/export/srt', (req, res) => {
   res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="transcript.srt"; filename*=UTF-8''${encodeURIComponent(name)}`);
   res.send('\uFEFF' + buildSrt(rec));
+});
+
+app.get('/api/recordings/:id/export/sprouts.md', (req, res) => {
+  const rec = store.getForUser(req.params.id, req.user.id);
+  if (!rec) return res.status(404).json({ error: 'not found' });
+  const name = `${safeExportName(rec)}-灵感发芽.md`;
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="sprouts.md"; filename*=UTF-8''${encodeURIComponent(name)}`);
+  res.send('\uFEFF' + buildSproutsMarkdown(rec));
 });
 
 app.use((err, req, res, next) => {

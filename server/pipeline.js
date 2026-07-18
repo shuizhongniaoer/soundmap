@@ -90,16 +90,22 @@ async function run(id) {
       store.update(id, { status: 'summarizing' });
     }
 
-    // 2. 总结 + 思维导图（并行）
-    const [summary, mindmap] = await Promise.all([
+    // 2. 总结 + 思维导图 + 灵感发芽（并行）。发芽是增值输出，失败不拖垮主流程。
+    const sproutsPromise = llm.sprouts(transcript.segments, rec.title).catch(error => {
+      console.warn(`[pipeline] ${id} 灵感发芽跳过:`, error.message);
+      return { items: [], error: error.message };
+    });
+    const [summary, mindmap, sprouts] = await Promise.all([
       llm.summarize(transcript.segments, rec.title),
       llm.mindmap(transcript.segments, rec.title),
+      sproutsPromise,
     ]);
 
     const cur = store.get(id) || {};
     store.update(id, {
       summary,
       mindmap,
+      sprouts,
       title: rec.title || summary.title,
       status: 'done',
       providers: { ...(cur.providers || {}), llm: llm.name },

@@ -40,6 +40,21 @@ function buildSrt(rec) {
   }).join('\n\n') + (transcriptSegments(rec).length ? '\n' : '');
 }
 
+function buildSproutsMarkdown(rec) {
+  const title = rec.title || rec.originalName || '录音记录';
+  const items = (rec.sprouts && Array.isArray(rec.sprouts.items)) ? rec.sprouts.items : [];
+  const lines = [`# ${title} · 灵感发芽`, '', '> 从录音原话出发的 AI 启发式延展，请结合上下文自行判断。', ''];
+  if (!items.length) return [...lines, '本条录音暂无值得展开的发芽点。', ''].join('\n');
+  items.forEach((item, index) => {
+    lines.push(`## ${String(index + 1).padStart(2, '0')}. ${item.title}`);
+    lines.push('', `**${item.type || '联想'} · 种子 [${fmt(item.start)}] ${item.speaker || ''}**`);
+    lines.push('', `> ${item.source || ''}`);
+    lines.push('', item.expansion || '');
+    lines.push('', `✨ **Aha：** ${item.aha || ''}`, '');
+  });
+  return lines.join('\n');
+}
+
 const p = (text, opts = {}) => new Paragraph({
   spacing: { after: 120, line: 300 },
   children: [new TextRun({ text, font: FONT, size: 21, ...opts })],
@@ -90,6 +105,19 @@ async function buildDocx(rec) {
     });
   }
 
+  const sprouts = rec.sprouts && Array.isArray(rec.sprouts.items) ? rec.sprouts.items : [];
+  if (sprouts.length) {
+    children.push(h('灵感发芽', HeadingLevel.HEADING_1));
+    children.push(p('从录音原话出发的 AI 启发式延展，请结合上下文自行判断。', { size: 18, color: '888888' }));
+    sprouts.forEach((item, index) => {
+      children.push(h(`${String(index + 1).padStart(2, '0')}. ${item.title}`, HeadingLevel.HEADING_2));
+      children.push(p(`🌱 ${item.type || '联想'} · 种子 [${fmt(item.start)}] ${item.speaker || ''}`, { bold: true, color: '487C3D' }));
+      children.push(p(`“${item.source || ''}”`, { italics: true, color: '555555' }));
+      children.push(p(item.expansion || ''));
+      children.push(p(`Aha：${item.aha || ''}`, { bold: true, color: 'B27A00' }));
+    });
+  }
+
   if (rec.transcript && rec.transcript.segments) {
     children.push(h('转写稿全文', HeadingLevel.HEADING_1));
     rec.transcript.segments.forEach(seg => {
@@ -122,4 +150,4 @@ async function buildDocx(rec) {
   return Packer.toBuffer(doc);
 }
 
-module.exports = { buildDocx, buildTxt, buildSrt, srtTime };
+module.exports = { buildDocx, buildTxt, buildSrt, buildSproutsMarkdown, srtTime };

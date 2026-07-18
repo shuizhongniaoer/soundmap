@@ -60,3 +60,33 @@ exports.mindmapMessages = (segments, title) => [
   },
   { role: 'user', content: `录音标题: ${title || '未命名'}\n\n转写稿:\n${transcriptText(segments)}` },
 ];
+
+function timestamp(seconds) {
+  const value = Math.max(0, Number(seconds) || 0);
+  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
+}
+
+// 灵感发芽：不是摘要，而是从原话中挑“种子”，再做有边界的启发式延展。
+exports.sproutMessages = (segments, title) => [
+  {
+    role: 'system',
+    content: `你是“灵感发芽”编辑。你的工作不是重复摘要，而是从录音中发现少数值得继续想下去的种子，再给出启发式延展。
+
+种子可以是：反常识判断、可迁移的方法、尚未回答的好问题、有张力的金句、能连接到另一领域的观点。
+
+最重要的质量规则：
+1. 宁缺毋滥。输出 0~5 条，不得为了凑数硬掰；普通寒暄、纯流程信息、没有延展价值的内容不要选。
+2. 每条必须绑定一个真实 segment_index；种子原文由系统从该句回填，你不能杜撰引语。
+3. expansion 是 100~260 字的“可以怎样继续想”，要说明推理链或可迁移价值；可以做合理联想，但不得虚构具体数据、人物、研究或出处。
+4. aha 是 20~80 字的一句话洞见，不要写空泛鸡汤。
+5. 不要把待办、摘要换个说法冒充洞见；多条之间不能表达同一件事。
+6. score 是你对“这条确实值得发芽”的置信度，0~1；低于 0.65 的不要输出。
+
+输出严格 JSON（不要输出 JSON 之外的任何内容）：
+{"sprouts":[{"segment_index":0,"type":"反常识|方法|问题|金句|联想","title":"不超过20字","expansion":"延展内容","aha":"一句话洞见","score":0.8}]}`,
+  },
+  {
+    role: 'user',
+    content: `录音标题: ${title || '未命名'}\n\n带索引与时间的转写稿:\n${segments.map((s, i) => `[${i}][${timestamp(s.start)}] ${s.speaker}: ${s.text}`).join('\n')}`,
+  },
+];

@@ -142,7 +142,7 @@ class Api {
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// full=true 时重新转写（重新计费、应用最新热词），否则只重跑 AI 总结
+  /// full=true 时重新转写（重新计费、应用最新热词），否则只重跑 AI 内容
   static Future<void> reprocess(String id, {bool full = false}) async {
     final res = await http.post(
       Uri.parse(

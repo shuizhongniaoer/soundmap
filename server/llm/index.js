@@ -2,6 +2,7 @@
 // summarize(segments, title) -> { title, abstract, key_points, todos, quotes }
 // mindmap(segments, title)   -> Markdown 大纲字符串
 const prompts = require('./prompts');
+const { normalizeSprouts } = require('./sprouts');
 
 const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
 const OPENAI_COMPAT_URL = `${HOST}/compatible-mode/v1/chat/completions`;
@@ -42,6 +43,10 @@ const dashscope = {
   },
   async mindmap(segments, title) {
     return stripFence(await chat(prompts.mindmapMessages(segments, title)));
+  },
+  async sprouts(segments, title) {
+    const out = await chat(prompts.sproutMessages(segments, title), { json: true });
+    return normalizeSprouts(JSON.parse(stripFence(out)), segments);
   },
   async proofread(segments, hotwords) {
     const out = await chat(prompts.proofreadMessages(segments, hotwords), { json: true });
@@ -94,6 +99,18 @@ const mock = {
       '- 转写降级方案',
     ].join('\n');
   },
+  async sprouts(segments) {
+    await new Promise(r => setTimeout(r, 400));
+    if (!segments.length) return { items: [] };
+    return normalizeSprouts({ sprouts: [{
+      segment_index: 0,
+      type: '方法',
+      title: '从一句话继续生长',
+      expansion: '这条原话不仅值得被摘录，还可以继续追问它适用于哪些场景、有什么边界，以及怎样变成一次可验证的行动。',
+      aha: '重点被记住只是开始，能继续生长才会成为自己的知识。',
+      score: 0.82,
+    }] }, segments);
+  },
 };
 
 function resolveProvider() {
@@ -112,5 +129,6 @@ module.exports = {
   get name() { return resolveProvider().name; },
   summarize(segments, title) { return resolveProvider().summarize(segments, title); },
   mindmap(segments, title) { return resolveProvider().mindmap(segments, title); },
+  sprouts(segments, title) { return resolveProvider().sprouts(segments, title); },
   proofread(segments, hotwords) { return resolveProvider().proofread(segments, hotwords); },
 };

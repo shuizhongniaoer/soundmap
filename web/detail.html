@@ -39,6 +39,16 @@
   .err { color: #c0392b; }
   button.re { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
   button.re:disabled { cursor: wait; opacity: .55; }
+  .sprout-intro { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:16px; color:var(--muted); font-size:13px; line-height:1.6; }
+  .sprout-card { background:#fffdf7; border:1px solid #e8e1cc; border-radius:12px; padding:20px; margin-bottom:16px; box-shadow:0 2px 8px rgba(75,65,35,.06); }
+  .sprout-head { display:flex; align-items:center; gap:9px; margin-bottom:12px; }
+  .sprout-no { font:600 12px ui-monospace,monospace; color:#9a8354; }
+  .sprout-type { font-size:12px; color:#487c3d; background:#edf5e9; border-radius:20px; padding:3px 10px; }
+  .sprout-title { font-size:17px; font-weight:650; color:#27382b; }
+  .seed-box { border-left:3px solid #6d9b59; background:#f4f8f1; padding:11px 13px; border-radius:0 8px 8px 0; font-size:13px; line-height:1.7; color:#455245; }
+  .seed-jump { background:none; border:0; color:#487c3d; padding:0; margin:0 0 4px; cursor:pointer; font-size:12px; }
+  .sprout-expand { font-size:14px; line-height:1.85; margin:14px 0; white-space:pre-wrap; }
+  .sprout-aha { color:#8b681d; background:#fff7dc; border-radius:8px; padding:10px 12px; font-size:14px; line-height:1.7; }
 </style>
 </head>
 <body>
@@ -58,11 +68,13 @@
   <div class="tabs">
     <div class="tab on" data-p="transcript">转写稿</div>
     <div class="tab" data-p="summary">AI 总结</div>
+    <div class="tab" data-p="sprouts">灵感发芽</div>
     <div class="tab" data-p="mindmap">思维导图</div>
   </div>
   <div class="panel">
     <div id="p-transcript"><div class="status">处理中…</div></div>
     <div id="p-summary" hidden></div>
+    <div id="p-sprouts" hidden><div class="status">发芽中…</div></div>
     <div id="p-mindmap" hidden>
       <div style="display:flex;gap:8px;margin-bottom:10px">
         <button class="re" onclick="exportMindmapPNG()">导出图片 PNG</button>
@@ -87,13 +99,13 @@ const player = document.getElementById('player');
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
   t.classList.add('on');
-  ['transcript', 'summary', 'mindmap'].forEach(p =>
+  ['transcript', 'summary', 'sprouts', 'mindmap'].forEach(p =>
     document.getElementById('p-' + p).hidden = p !== t.dataset.p);
   if (t.dataset.p === 'mindmap') renderMindmap();
 });
 
 const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => String(s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 function scheduleLoad(delay = 2500) {
   clearTimeout(pollTimer);
@@ -134,6 +146,7 @@ async function load() {
         ((s.todos || []).length ? `<h3>待办事项</h3><ul>${s.todos.map(t => `<li>${esc(t.task)}${t.owner ? `（${esc(t.owner)}）` : ''}</li>`).join('')}</ul>` : '') +
         ((s.quotes || []).length ? `<h3>原话摘录</h3><ul>${s.quotes.map(q => `<li>"${esc(q)}"</li>`).join('')}</ul>` : '');
     }
+    renderSprouts();
     if (!['done', 'error'].includes(rec.status)) scheduleLoad();
     else if (!document.getElementById('p-mindmap').hidden) renderMindmap();
   } catch (error) {
@@ -144,6 +157,32 @@ async function load() {
     }
     scheduleLoad();
   }
+}
+
+function renderSprouts() {
+  const el = document.getElementById('p-sprouts');
+  const items = rec && rec.sprouts && Array.isArray(rec.sprouts.items) ? rec.sprouts.items : null;
+  if (items == null) {
+    el.innerHTML = !rec || !['done', 'error'].includes(rec.status)
+      ? '<div class="status">正在寻找值得继续想的种子…</div>'
+      : '<div class="status">这条旧录音还没有生成发芽，点击右上角“重新生成”即可补上。</div>';
+    return;
+  }
+  if (!items.length) {
+    el.innerHTML = '<div class="status">这段录音没有足够扎实的发芽点。宁缺毋滥，不为凑数硬掰。</div>';
+    return;
+  }
+  el.innerHTML = `<div class="sprout-intro"><span>从原话种子继续生长的 AI 延展，不等同于事实摘要，请结合上下文判断。</span><button class="re" onclick="exportSprouts()">导出 Markdown</button></div>` +
+    items.map((item, index) => `<article class="sprout-card">
+      <div class="sprout-head"><span class="sprout-no">${String(index + 1).padStart(2, '0')}</span><span class="sprout-type">${esc(item.type || '联想')}</span><span class="sprout-title">${esc(item.title)}</span></div>
+      <div class="seed-box"><button class="seed-jump" data-start="${Number(item.start) || 0}">🌱 种子 · ${fmt(item.start || 0)} ${esc(item.speaker || '')} · 点击回听</button><br>“${esc(item.source)}”</div>
+      <div class="sprout-expand">${esc(item.expansion)}</div>
+      <div class="sprout-aha">✨ <b>Aha</b>　${esc(item.aha)}</div>
+    </article>`).join('');
+  el.querySelectorAll('.seed-jump').forEach(button => button.onclick = () => {
+    player.currentTime = Number(button.dataset.start) || 0;
+    player.play().catch(() => {});
+  });
 }
 
 function renderTranscript() {
@@ -280,6 +319,11 @@ function exportTranscript(format) {
   location.href = `/api/recordings/${id}/export/${format}`;
 }
 
+function exportSprouts() {
+  if (!rec || !rec.sprouts || !(rec.sprouts.items || []).length) return alert('灵感发芽还没生成');
+  location.href = `/api/recordings/${id}/export/sprouts.md`;
+}
+
 function exportMindmapMD() {
   if (!rec || !rec.mindmap) return alert('思维导图还没生成');
   const blob = new Blob([rec.mindmap], { type: 'text/markdown;charset=utf-8' });
@@ -330,8 +374,8 @@ async function exportMindmapPNG() {
 
 async function reprocess() {
   const full = confirm(
-    '「确定」= 重新转写 + 总结（会覆盖已做的说话人/文字修正）\n' +
-    '「取消」= 只重新生成总结和导图（免费，保留修正）');
+    '「确定」= 重新转写 + AI 内容（会覆盖已做的说话人/文字修正）\n' +
+    '「取消」= 只重新生成总结、发芽和导图（免费，保留修正）');
   let q = full ? '?full=1' : '';
   if (full) {
     const cur = (rec && rec.asrProvider) || '默认';
@@ -345,9 +389,10 @@ async function reprocess() {
     const res = await fetch(`/api/recordings/${id}/reprocess${q}`, { method: 'POST' });
     if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
     mmRendered = false;
-    rec = { ...(rec || {}), status: 'uploaded', ...(full ? { transcript: null } : {}) };
+    rec = { ...(rec || {}), status: 'uploaded', sprouts: null, ...(full ? { transcript: null } : {}) };
     updateProcessButton();
     document.getElementById('p-transcript').innerHTML = '<div class="status">重新处理中…</div>';
+    document.getElementById('p-sprouts').innerHTML = '<div class="status">重新发芽中…</div>';
     scheduleLoad(300);
   } catch (error) {
     alert('重新生成失败: ' + error.message);

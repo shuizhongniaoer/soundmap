@@ -1,6 +1,7 @@
 function searchableText(rec) {
   const segments = (rec.transcript && rec.transcript.segments) || [];
   const summary = rec.summary || {};
+  const sprouts = (rec.sprouts && rec.sprouts.items) || [];
   return [
     rec.title,
     rec.originalName,
@@ -9,6 +10,7 @@ function searchableText(rec) {
     ...(summary.key_points || []),
     ...(summary.todos || []).flatMap(todo => [todo.task, todo.owner]),
     ...(summary.quotes || []),
+    ...sprouts.flatMap(item => [item.title, item.source, item.expansion, item.aha]),
   ].filter(Boolean).join('\n');
 }
 
@@ -19,7 +21,11 @@ function snippetFor(rec, query) {
     `${seg.speaker || ''} ${seg.text || ''}`.toLocaleLowerCase().includes(needle));
   if (segment) return trimSnippet(`${segment.speaker || ''}：${segment.text || ''}`, query);
   const summary = rec.summary || {};
-  const candidates = [summary.abstract, ...(summary.key_points || []), ...(summary.quotes || [])];
+  const sprouts = (rec.sprouts && rec.sprouts.items) || [];
+  const candidates = [
+    summary.abstract, ...(summary.key_points || []), ...(summary.quotes || []),
+    ...sprouts.flatMap(item => [item.title, item.source, item.expansion, item.aha]),
+  ];
   const match = candidates.find(value => String(value || '').toLocaleLowerCase().includes(needle));
   return match ? trimSnippet(String(match), query) : null;
 }
