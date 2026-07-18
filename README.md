@@ -53,13 +53,15 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 
 本地服务支持三个识别引擎（`LOCAL_ASR_ENGINE` 切换，重启生效）：
 
-| 引擎 | 启动方式 | 实测结论（电话录音场景，2026-07） |
+| 引擎 | 启动方式 | 状态（电话录音实测，2026-07） |
 |---|---|---|
-| funasr（默认） | `./local-asr/start.sh` | 速度快、有分人和热词，但准确率不行（Paraformer 已过时） |
-| firered | `./local-asr/setup-firered.sh` 后 `LOCAL_ASR_ENGINE=firered ./local-asr/start.sh` | 质量本地最佳（仍逊讯飞），但 PyTorch CPU 推理太慢（RTF>1），待换 ONNX 加速 |
-| qwen3 | 已淘汰：实测转写内容与录音偏差过大 | —— |
+| **firered-onnx** | `./local-asr/setup-firered-onnx.sh` 后 `LOCAL_ASR_ENGINE=firered-onnx ./local-asr/start.sh` | FireRed 一代 int8 量化 + sherpa-onnx，CPU 预期提速 3~6 倍，质量同 firered（待测） |
+| **firered2** | `./local-asr/setup-firered2.sh` 后 `LOCAL_ASR_ENGINE=firered2 ./local-asr/start.sh` | 二代全家桶（自带VAD/标点/句级时间戳），准确率再高一档；CPU 仍慢，NVIDIA 上 `FIRERED2_GPU=1` 快一个量级（待测） |
+| firered | `LOCAL_ASR_ENGINE=firered ./local-asr/start.sh` | 质量可用但 PyTorch CPU 太慢（3分钟音频转197秒），被 onnx 版取代 |
+| funasr（默认） | `./local-asr/start.sh` | 有分人和热词但准确率不行（Paraformer 过时） |
+| qwen3 | 已淘汰 | 实测内容与录音偏差过大 |
 
-结论：云端主力=讯飞大模型；本地线待 FireRed ONNX 提速后再评估。未来部署形态：云上轻量服务器做入口 + 本机跑此服务当 worker。
+结论：云端主力=讯飞大模型；本地线看 firered-onnx（Mac 速度解）与 firered2（质量上限，配 NVIDIA 才起飞）。未来部署形态：云上轻量服务器做入口 + 本机/GPU 主机跑此服务当 worker。
 
 ## 主要功能
 

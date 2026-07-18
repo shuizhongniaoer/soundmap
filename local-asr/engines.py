@@ -190,7 +190,130 @@ class Qwen3Engine:
         return {"language": "zh", "segments": segments}
 
 
-ENGINES = {"funasr": FunasrEngine, "firered": FireredEngine, "qwen3": Qwen3Engine}
+# ---------------- FireRedASR ONNX int8（sherpa-onnx 运行时，CPU 提速 3~6 倍） ----------------
+class FireredOnnxEngine:
+    name = "firered-onnx"
+
+    def __init__(self):
+        try:
+            import sherpa_onnx  # noqa: F401
+        except ImportError as e:
+            raise RuntimeError("sherpa-onnx 未安装：先运行 ./local-asr/setup-firered-onnx.sh") from e
+        import sherpa_onnx
+        d = os.path.join(BASE_DIR, "pretrained_models",
+                         "sherpa-onnx-fire-red-asr-large-zh_en-2025-02-16")
+        if not os.path.isdir(d):
+            raise RuntimeError("FireRed ONNX 模型缺失：先运行 ./local-asr/setup-firered-onnx.sh")
+        self.rec = sherpa_onnx.OfflineRecognizer.from_fire_red_asr(
+            encoder=os.path.join(d, "encoder.int8.onnx"),
+            decoder=os.path.join(d, "decoder.int8.onnx"),
+            tokens=os.path.join(d, "tokens.txt"),
+            num_threads=max(2, (os.cpu_count() or 4) - 2),
+            provider=os.environ.get("ONNX_PROVIDER", "cpu"),  # 可试 coreml 吃 Mac 神经引擎
+            decoding_method="greedy_search",
+        )
+        self.chunker = Chunker()
+        from funasr import AutoModel
+        self.punc = AutoModel(model="ct-punc", disable_update=True)
+
+    def transcribe(self, path, hotwords):  # hotwords 不支持
+        import soundfile as sf
+        wav = to_wav16k(path)
+        data, sr = sf.read(wav, dtype="float32")
+        bounds = self.chunker.chunks(wav)
+        streams = []
+        for beg, end in bounds:
+            s = self.rec.create_stream()
+            s.accept_waveform(sr, data[int(beg / 1000 * sr):int(end / 1000 * sr)])
+            streams.append(s)
+        if streams:
+            self.rec.decode_streams(streams)  # 批量解码，吃满多核
+        segments = []
+        for (beg, end), s in zip(bounds, streams):
+            text = (s.result.text or "").strip()
+            if not text:
+                continue
+            try:
+                text = self.punc.generate(input=text)[0]["text"]
+            except Exception:
+                pass
+            segments.append({"start": beg // 1000, "end": end // 1000,
+                             "speaker": "说话人1", "text": text})
+        os.unlink(wav)
+        return {"language": "zh", "segments": segments}
+
+
+# ---------------- FireRedASR2S（二代全家桶：自带 VAD/LID/标点，句级时间戳） ----------------
+class Firered2Engine:
+    name = "firered2"
+
+    def __init__(self):
+        repo = os.path.join(BASE_DIR, "FireRedASR2S")
+        pm = os.path.join(repo, "pretrained_models")
+        need = ["FireRedASR2-AED", "FireRedVAD", "FireRedLID", "FireRedPunc"]
+        if not os.path.isdir(repo) or not all(os.path.isdir(os.path.join(pm, n)) for n in need):
+            raise RuntimeError("FireRedASR2S 未安装：先运行 ./local-asr/setup-firered2.sh（代码+约5GB模型）")
+        import sys
+        sys.path.insert(0, repo)
+        # torch.load 兼容补丁（同 v1，官方权重可信来源）
+        import argparse
+        import torch
+        try:
+            torch.serialization.add_safe_globals([argparse.Namespace])
+        except Exception:
+            pass
+        _orig = torch.load
+        def _load(*a, **k):
+            k.setdefault("weights_only", False)
+            return _orig(*a, **k)
+        torch.load = _load
+
+        from fireredasr2s.fireredasr2 import FireRedAsr2Config
+        from fireredasr2s.fireredlid import FireRedLidConfig
+        from fireredasr2s.fireredpunc import FireRedPuncConfig
+        from fireredasr2s.fireredvad import FireRedVadConfig
+        from fireredasr2s import FireRedAsr2System, FireRedAsr2SystemConfig
+
+        use_gpu = os.environ.get("FIRERED2_GPU", "0") == "1"  # NVIDIA 上设 1，12 倍速
+        cfg = FireRedAsr2SystemConfig(
+            os.path.join(pm, "FireRedVAD", "VAD"),
+            os.path.join(pm, "FireRedLID"),
+            "aed", os.path.join(pm, "FireRedASR2-AED"),
+            os.path.join(pm, "FireRedPunc"),
+            FireRedVadConfig(use_gpu=False),
+            FireRedLidConfig(use_gpu=use_gpu, use_half=False),
+            FireRedAsr2Config(use_gpu=use_gpu, use_half=False, beam_size=3, nbest=1,
+                              decode_max_len=0, softmax_smoothing=1.25,
+                              aed_length_penalty=0.6, eos_penalty=1.0,
+                              return_timestamp=False),
+            FireRedPuncConfig(use_gpu=use_gpu),
+            enable_vad=1, enable_lid=1, enable_punc=1,
+        )
+        self.system = FireRedAsr2System(cfg)
+
+    def transcribe(self, path, hotwords):  # hotwords 不支持
+        wav = to_wav16k(path)
+        result = self.system.process(wav) or {}
+        segments = []
+        for s in result.get("sentences") or []:
+            text = (s.get("text") or "").strip()
+            if text:
+                segments.append({"start": round(s.get("start_ms", 0) / 1000),
+                                 "end": round(s.get("end_ms", 0) / 1000),
+                                 "speaker": "说话人1", "text": text})
+        if not segments and (result.get("text") or "").strip():
+            segments = [{"start": 0, "end": 0, "speaker": "说话人1", "text": result["text"].strip()}]
+        os.unlink(wav)
+        return {"language": "zh", "segments": segments}
+
+
+ENGINES = {
+    "funasr": FunasrEngine,
+    "firered": FireredEngine,
+    "firered-onnx": FireredOnnxEngine,
+    "firered2": Firered2Engine,
+    "qwen3": Qwen3Engine,
+}
 
 
 def build_engine(name):
