@@ -6,8 +6,10 @@
 # 首次使用某引擎会自动/按脚本下载模型，之后离线运行。
 import os
 import time
+import traceback
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="soundmap-local-asr")
@@ -45,11 +47,16 @@ def health():
 
 @app.post("/transcribe")
 def transcribe(req: Req):
-    eng = get_engine()
-    t0 = time.time()
-    result = eng.transcribe(req.path, req.hotwords)
-    print(f"[local-asr/{ENGINE_NAME}] {req.path}: {len(result['segments'])} 句, 耗时 {time.time() - t0:.1f}s")
-    return result
+    try:
+        eng = get_engine()
+        t0 = time.time()
+        result = eng.transcribe(req.path, req.hotwords)
+        print(f"[local-asr/{ENGINE_NAME}] {req.path}: {len(result['segments'])} 句, 耗时 {time.time() - t0:.1f}s")
+        return result
+    except Exception as e:  # 把真实错误透传给主服务，方便定位
+        traceback.print_exc()
+        return JSONResponse(status_code=500,
+                            content={"error": f"[{ENGINE_NAME}] {type(e).__name__}: {e}"})
 
 
 if __name__ == "__main__":
