@@ -142,14 +142,22 @@ class Api {
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// full=true 时重新转写（重新计费、应用最新热词），否则只重跑 AI 内容
-  static Future<void> reprocess(String id, {bool full = false}) async {
+  /// part 可选 summary / sprouts / mindmap / proofread / ai / all；full 才重新转写。
+  static Future<void> reprocess(String id,
+      {String part = 'ai', bool full = false}) async {
+    final uri = Uri.parse('${await base()}/api/recordings/$id/reprocess')
+        .replace(queryParameters: {
+      'part': part,
+      if (full) 'full': '1',
+    });
     final res = await http.post(
-      Uri.parse(
-          '${await base()}/api/recordings/$id/reprocess${full ? '?full=1' : ''}'),
+      uri,
       headers: await headers(),
     );
     if (res.statusCode == 401) throw const AuthRequiredException();
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception(_json(res)['error'] ?? '重新生成失败');
+    }
   }
 }
 

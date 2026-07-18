@@ -98,7 +98,7 @@ window.onload = function() {
                 PopupMenuItem(value: 'word', child: Text('导出 Word')),
                 PopupMenuItem(value: 'txt', child: Text('导出 TXT')),
                 PopupMenuItem(value: 'srt', child: Text('导出 SRT 字幕')),
-                PopupMenuItem(value: 'sprouts', child: Text('导出灵感发芽 Markdown')),
+                PopupMenuItem(value: 'sprouts', child: Text('导出发芽报告 Markdown')),
                 PopupMenuItem(
                     value: 'view', child: Text('浏览器打开（可导出导图 PNG/Markdown）')),
               ],
@@ -107,13 +107,38 @@ window.onload = function() {
               icon: const Icon(Icons.refresh),
               tooltip: '重新生成',
               onSelected: (v) async {
-                _mmLoaded = null;
-                await Api.reprocess(widget.id, full: v == 'full');
-                _load();
+                final full = v == 'full';
+                if (full) {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('重新转写并全部生成？'),
+                      content: const Text('这会覆盖人工修正，并产生新的语音识别和大模型调用费用。'),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('取消')),
+                        FilledButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('继续')),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+                }
+                if (['mindmap', 'all', 'full'].contains(v)) _mmLoaded = null;
+                await Api.reprocess(widget.id,
+                    part: full ? 'all' : v, full: full);
+                await _load();
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(value: 'llm', child: Text('重新生成总结/发芽/导图（不重转写）')),
-                PopupMenuItem(value: 'full', child: Text('重新转写+AI 内容（应用最新热词）')),
+                PopupMenuItem(value: 'summary', child: Text('重新生成 AI 总结')),
+                PopupMenuItem(value: 'sprouts', child: Text('重新生成灵感发芽')),
+                PopupMenuItem(value: 'mindmap', child: Text('重新生成思维导图')),
+                PopupMenuItem(value: 'proofread', child: Text('优化转写稿')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: 'all', child: Text('全部重新生成（不重转写）')),
+                PopupMenuItem(value: 'full', child: Text('重新转写并全部生成')),
               ],
             ),
           ],
@@ -245,7 +270,26 @@ window.onload = function() {
   Widget _sproutsTab(Map<String, dynamic> rec) {
     final data = rec['sprouts'] as Map<String, dynamic>?;
     if (data == null) {
-      if (rec['status'] != 'done') return _processing('正在寻找值得继续想的种子…');
+      if (rec['status'] != 'done') {
+        return Container(
+          color: const Color(0xFFF4EFE3),
+          child: const Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.spa_outlined, size: 52, color: Color(0xFF637B51)),
+              SizedBox(height: 18),
+              Text('有些念头，需要一点时间才肯显出形状',
+                  style:
+                      TextStyle(fontFamily: 'serif', color: Color(0xFF544E42))),
+              SizedBox(height: 14),
+              Text('筛选种子　·　寻找回声　·　等待开花',
+                  style: TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 1.2,
+                      color: Color(0xFF8C826F))),
+            ]),
+          ),
+        );
+      }
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(28),
@@ -268,55 +312,118 @@ window.onload = function() {
     }
     String fmt(num value) =>
         '${(value ~/ 60).toString().padLeft(2, '0')}:${(value % 60).toInt().toString().padLeft(2, '0')}';
+    final generatedAt = DateTime.tryParse(
+        data['generatedAt']?.toString() ?? rec['updatedAt']?.toString() ?? '');
+    final date = generatedAt == null
+        ? ''
+        : '${generatedAt.year} · ${generatedAt.month.toString().padLeft(2, '0')} · ${generatedAt.day.toString().padLeft(2, '0')}';
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+      padding: EdgeInsets.zero,
+      physics: const BouncingScrollPhysics(),
       itemCount: items.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {
-          return const Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: Text('从原话种子继续生长的 AI 延展，不等同于事实摘要，请结合上下文判断。',
-                style:
-                    TextStyle(fontSize: 12, color: Colors.grey, height: 1.5)),
+          return Container(
+            color: const Color(0xFFF4EFE3),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Color(0x385F523C))),
+                ),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('SOUNDMAP · SPROUT REPORT',
+                          style: TextStyle(
+                              fontSize: 9,
+                              letterSpacing: 2,
+                              color: Color(0xFF7E745F),
+                              fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 13),
+                      Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            const Expanded(
+                              child: Text('发芽报告',
+                                  style: TextStyle(
+                                      fontFamily: 'serif',
+                                      fontSize: 31,
+                                      letterSpacing: 4,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF2F2B23))),
+                            ),
+                            Text('$date\n${items.length} 枚种子',
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(
+                                    fontSize: 10,
+                                    height: 1.6,
+                                    color: Color(0xFF756B58))),
+                          ]),
+                      const SizedBox(height: 15),
+                      const Text('从一段声音里拾取尚未说完的念头，让它越过日常，\n与更辽阔的人类经验彼此照亮。',
+                          style: TextStyle(
+                              fontFamily: 'serif',
+                              fontSize: 12,
+                              height: 1.8,
+                              color: Color(0xFF736B5D))),
+                    ]),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(24, 14, 24, 8),
+                child: Text('AI 启发式延展不等同于事实摘要；典故与判断值得继续核验。',
+                    style: TextStyle(
+                        fontSize: 10, height: 1.5, color: Color(0xFF827866))),
+              ),
+            ]),
           );
         }
         final item = items[index - 1] as Map<String, dynamic>;
-        return Card(
-          color: const Color(0xFFFFFDF7),
-          margin: const EdgeInsets.only(bottom: 14),
+        return Container(
+          color: const Color(0xFFF4EFE3),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 30),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(index.toString().padLeft(2, '0'),
                       style: const TextStyle(
-                          fontSize: 11, color: Color(0xFF9A8354))),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEDF5E9),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(item['type']?.toString() ?? '联想',
-                        style: const TextStyle(
-                            fontSize: 11, color: Color(0xFF487C3D))),
+                          fontFamily: 'monospace',
+                          fontSize: 19,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF9D8655))),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item['title']?.toString() ?? '',
+                              style: const TextStyle(
+                                  fontFamily: 'serif',
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: .6,
+                                  color: Color(0xFF302B23))),
+                          const SizedBox(height: 4),
+                          Text('${item['type'] ?? '联想'} · GERMINATION',
+                              style: const TextStyle(
+                                  fontSize: 9,
+                                  letterSpacing: 1.3,
+                                  color: Color(0xFF587348))),
+                        ]),
                   ),
                 ]),
-                const SizedBox(height: 9),
-                Text(item['title']?.toString() ?? '',
-                    style: const TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 12),
+                const SizedBox(height: 18),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF4F8F1),
-                    borderRadius: BorderRadius.circular(8),
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+                  decoration: const BoxDecoration(
+                    color: Color(0xBFEFF4E6),
+                    border: Border(
+                        left: BorderSide(color: Color(0xFF71885F), width: 2)),
                   ),
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,27 +431,72 @@ window.onload = function() {
                         Text(
                             '🌱 种子 · ${fmt(item['start'] as num? ?? 0)} ${item['speaker'] ?? ''}',
                             style: const TextStyle(
-                                fontSize: 12, color: Color(0xFF487C3D))),
-                        const SizedBox(height: 6),
+                                fontFamily: 'monospace',
+                                fontSize: 10,
+                                color: Color(0xFF4C6840))),
+                        const SizedBox(height: 7),
                         Text('“${item['source'] ?? ''}”',
-                            style: const TextStyle(height: 1.55)),
+                            style: const TextStyle(
+                                fontFamily: 'serif',
+                                height: 1.7,
+                                color: Color(0xFF45473D))),
                       ]),
                 ),
-                const SizedBox(height: 13),
+                if (item['seedSummary'] != null) ...[
+                  const SizedBox(height: 15),
+                  Text(item['seedSummary'].toString(),
+                      style: const TextStyle(
+                          fontFamily: 'serif',
+                          height: 1.85,
+                          color: Color(0xFF4A4439))),
+                ],
+                if (item['echo'] != null) ...[
+                  const SizedBox(height: 24),
+                  _sproutLabel('遥远的回声'),
+                  const SizedBox(height: 9),
+                  Text(item['reference']?.toString() ?? '',
+                      style: const TextStyle(
+                          fontFamily: 'serif',
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF44392B))),
+                  const SizedBox(height: 7),
+                  Text(item['echo'].toString(),
+                      textAlign: TextAlign.justify,
+                      style: const TextStyle(
+                          fontFamily: 'serif',
+                          height: 1.9,
+                          color: Color(0xFF39342C))),
+                ],
+                const SizedBox(height: 24),
+                _sproutLabel('开花'),
+                const SizedBox(height: 9),
                 Text(item['expansion']?.toString() ?? '',
-                    style: const TextStyle(height: 1.7)),
-                const SizedBox(height: 13),
+                    textAlign: TextAlign.justify,
+                    style: const TextStyle(
+                        fontFamily: 'serif',
+                        height: 1.9,
+                        color: Color(0xFF39342C))),
+                const SizedBox(height: 24),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(11),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF7DC),
-                    borderRadius: BorderRadius.circular(8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: const BoxDecoration(
+                    color: Color(0x9FFFF2C8),
+                    border: Border(
+                      top: BorderSide(color: Color(0x47A68030)),
+                      bottom: BorderSide(color: Color(0x47A68030)),
+                    ),
                   ),
-                  child: Text('✨ Aha　${item['aha'] ?? ''}',
+                  child: Text('✦  Aha　${item['aha'] ?? ''}',
                       style: const TextStyle(
-                          color: Color(0xFF7A5B17), height: 1.55)),
+                          fontFamily: 'serif',
+                          color: Color(0xFF72591F),
+                          height: 1.7)),
                 ),
+                const SizedBox(height: 30),
+                const Divider(color: Color(0x385F523C), height: 1),
               ],
             ),
           ),
@@ -352,4 +504,15 @@ window.onload = function() {
       },
     );
   }
+
+  Widget _sproutLabel(String text) => Row(children: [
+        Text(text,
+            style: const TextStyle(
+                fontSize: 10,
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF8A7040))),
+        const SizedBox(width: 10),
+        const Expanded(child: Divider(color: Color(0x33765C2F))),
+      ]);
 }

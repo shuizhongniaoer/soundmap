@@ -16,13 +16,20 @@ function normalizeSprouts(raw, segments) {
     if (!Number.isInteger(segmentIndex) || segmentIndex < 0 || segmentIndex >= segments.length) continue;
     if (!Number.isFinite(score) || score < 0.65) continue;
     const title = clean(candidate.title, 40);
-    const expansion = clean(candidate.expansion, 800);
-    const aha = clean(candidate.aha, 180);
+    const seedSummary = clean(candidate.seed_summary, 360);
+    const reference = clean(candidate.reference, 120);
+    const echo = clean(candidate.echo, 1400);
+    const expansion = clean(candidate.expansion, 1600);
+    const aha = clean(candidate.aha, 300);
     const type = TYPES.has(candidate.type) ? candidate.type : '联想';
     const titleKey = title.toLocaleLowerCase();
-    if (!title || !expansion || !aha || seenSegments.has(segmentIndex) || seenTitles.has(titleKey)) continue;
+    if (!title || !seedSummary || !reference || !echo || !expansion || !aha || seenSegments.has(segmentIndex) || seenTitles.has(titleKey)) continue;
     const source = segments[segmentIndex] || {};
     if (!clean(source.text, 2000)) continue;
+    const start = Math.max(0, Number(source.start) || 0);
+    const rawEnd = Number(source.end);
+    const nextStart = Number(segments[segmentIndex + 1] && segments[segmentIndex + 1].start);
+    const end = rawEnd > start ? rawEnd : nextStart > start ? nextStart : start + 8;
     seenSegments.add(segmentIndex);
     seenTitles.add(titleKey);
     items.push({
@@ -30,8 +37,12 @@ function normalizeSprouts(raw, segments) {
       type,
       source: clean(source.text, 2000),
       speaker: clean(source.speaker, 80),
-      start: Math.max(0, Number(source.start) || 0),
+      start,
+      end,
       segmentIndex,
+      seedSummary,
+      reference,
+      echo,
       expansion,
       aha,
       score: Math.min(1, score),

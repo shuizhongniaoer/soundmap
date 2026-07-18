@@ -43,13 +43,17 @@ function buildSrt(rec) {
 function buildSproutsMarkdown(rec) {
   const title = rec.title || rec.originalName || '录音记录';
   const items = (rec.sprouts && Array.isArray(rec.sprouts.items)) ? rec.sprouts.items : [];
-  const lines = [`# ${title} · 灵感发芽`, '', '> 从录音原话出发的 AI 启发式延展，请结合上下文自行判断。', ''];
+  const generatedAt = rec.sprouts && rec.sprouts.generatedAt;
+  const date = generatedAt ? new Date(generatedAt).toLocaleDateString('zh-CN') : '';
+  const lines = [`# ${title} · 发芽报告`, '', `${date ? `${date} · ` : ''}${items.length} 枚种子`, '', '> 从录音原话出发的 AI 启发式延展；典故与判断请结合上下文继续核验。', ''];
   if (!items.length) return [...lines, '本条录音暂无值得展开的发芽点。', ''].join('\n');
   items.forEach((item, index) => {
     lines.push(`## ${String(index + 1).padStart(2, '0')}. ${item.title}`);
     lines.push('', `**${item.type || '联想'} · 种子 [${fmt(item.start)}] ${item.speaker || ''}**`);
     lines.push('', `> ${item.source || ''}`);
-    lines.push('', item.expansion || '');
+    if (item.seedSummary) lines.push('', item.seedSummary);
+    if (item.echo) lines.push('', `### 遥远的回声 · ${item.reference || ''}`, '', item.echo);
+    lines.push('', '### 开花', '', item.expansion || '');
     lines.push('', `✨ **Aha：** ${item.aha || ''}`, '');
   });
   return lines.join('\n');
@@ -107,12 +111,18 @@ async function buildDocx(rec) {
 
   const sprouts = rec.sprouts && Array.isArray(rec.sprouts.items) ? rec.sprouts.items : [];
   if (sprouts.length) {
-    children.push(h('灵感发芽', HeadingLevel.HEADING_1));
-    children.push(p('从录音原话出发的 AI 启发式延展，请结合上下文自行判断。', { size: 18, color: '888888' }));
+    children.push(h('发芽报告', HeadingLevel.HEADING_1));
+    children.push(p('从录音原话出发的 AI 启发式延展；典故与判断请结合上下文继续核验。', { size: 18, color: '888888' }));
     sprouts.forEach((item, index) => {
       children.push(h(`${String(index + 1).padStart(2, '0')}. ${item.title}`, HeadingLevel.HEADING_2));
       children.push(p(`🌱 ${item.type || '联想'} · 种子 [${fmt(item.start)}] ${item.speaker || ''}`, { bold: true, color: '487C3D' }));
       children.push(p(`“${item.source || ''}”`, { italics: true, color: '555555' }));
+      if (item.seedSummary) children.push(p(item.seedSummary));
+      if (item.echo) {
+        children.push(h(`遥远的回声 · ${item.reference || ''}`, HeadingLevel.HEADING_3));
+        children.push(p(item.echo));
+      }
+      children.push(h('开花', HeadingLevel.HEADING_3));
       children.push(p(item.expansion || ''));
       children.push(p(`Aha：${item.aha || ''}`, { bold: true, color: 'B27A00' }));
     });

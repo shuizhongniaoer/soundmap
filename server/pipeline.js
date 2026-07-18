@@ -59,9 +59,27 @@ async function publicBase() {
   return (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '') || null;
 }
 
-async function run(id) {
+async function optimizeTranscript(rec, transcript) {
+  try {
+    const suffix = rec.userId && rec.userId !== 'local' ? `:${rec.userId}` : '';
+    const hotwords = store.getMeta(`hotwords${suffix}`) || [];
+    const corrections = await llm.proofread(transcript.segments, hotwords);
+    const { fixed, rejected } = applyCorrections(transcript.segments, corrections);
+    if (fixed) console.log(`[pipeline] ${rec.id} LLM 校对修正 ${fixed} 处`);
+    if (rejected) console.warn(`[pipeline] ${rec.id} 拒绝 ${rejected} 处过度校对`);
+    return { fixed, rejected, generatedAt: new Date().toISOString() };
+  } catch (error) {
+    console.warn(`[pipeline] ${rec.id} 校对跳过:`, error.message);
+    return { fixed: 0, rejected: 0, error: error.message, generatedAt: new Date().toISOString() };
+  }
+}
+
+async function run(id, options = {}) {
   const rec = store.get(id);
   if (!rec) return;
+  const requested = new Set(Array.isArray(options.parts)
+    ? options.parts
+    : ['proofread', 'summary', 'mindmap', 'sprouts']);
   try {
     // 1. 转写（已有转写稿则跳过——说话人修正后重新生成时不重复付费转写）
     let transcript = rec.transcript;
@@ -73,44 +91,45 @@ async function run(id) {
       const provider = asr.resolve(rec.asrProvider); // 支持按录音指定引擎
       transcript = await provider.transcribe({ fileUrl, filename: asrFile, userId: rec.userId || 'local' });
 
-      // LLM 自动校对：修正上下文明显矛盾的误识别词（原文保留在 seg.orig，前端可查看）
-      try {
-        const suffix = rec.userId && rec.userId !== 'local' ? `:${rec.userId}` : '';
-        const hotwords = store.getMeta(`hotwords${suffix}`) || [];
-        const corrections = await llm.proofread(transcript.segments, hotwords);
-        const { fixed, rejected } = applyCorrections(transcript.segments, corrections);
-        if (fixed) console.log(`[pipeline] ${id} LLM 校对修正 ${fixed} 处`);
-        if (rejected) console.warn(`[pipeline] ${id} 拒绝 ${rejected} 处过度校对`);
-      } catch (e) {
-        console.warn(`[pipeline] ${id} 校对跳过:`, e.message);
-      }
-
       store.update(id, { transcript, status: 'summarizing', providers: { ...(rec.providers || {}), asr: provider.name } });
     } else {
       store.update(id, { status: 'summarizing' });
     }
 
-    // 2. 总结 + 思维导图 + 灵感发芽（并行）。发芽是增值输出，失败不拖垮主流程。
-    const sproutsPromise = llm.sprouts(transcript.segments, rec.title).catch(error => {
-      console.warn(`[pipeline] ${id} 灵感发芽跳过:`, error.message);
-      return { items: [], error: error.message };
-    });
+    // 2. 转写稿优化先完成，确保后续内容基于优化后的文本；其余所选内容并行生成。
+    let proofreadResult;
+    if (requested.has('proofread')) {
+      proofreadResult = await optimizeTranscript(rec, transcript);
+      store.update(id, { transcript, lastProofread: proofreadResult });
+    }
+    const summaryPromise = requested.has('summary')
+      ? llm.summarize(transcript.segments, rec.title) : Promise.resolve(undefined);
+    const mindmapPromise = requested.has('mindmap')
+      ? llm.mindmap(transcript.segments, rec.title) : Promise.resolve(undefined);
+    const sproutsPromise = requested.has('sprouts')
+      ? llm.sprouts(transcript.segments, rec.title).catch(error => {
+        console.warn(`[pipeline] ${id} 灵感发芽跳过:`, error.message);
+        return { items: [], error: error.message };
+      }) : Promise.resolve(undefined);
     const [summary, mindmap, sprouts] = await Promise.all([
-      llm.summarize(transcript.segments, rec.title),
-      llm.mindmap(transcript.segments, rec.title),
+      summaryPromise,
+      mindmapPromise,
       sproutsPromise,
     ]);
 
     const cur = store.get(id) || {};
-    store.update(id, {
-      summary,
-      mindmap,
-      sprouts,
-      title: rec.title || summary.title,
+    const patch = {
       status: 'done',
       providers: { ...(cur.providers || {}), llm: llm.name },
-    });
-    console.log(`[pipeline] ${id} 完成 (asr=${(cur.providers || {}).asr || asr.name}, llm=${llm.name})`);
+    };
+    if (summary !== undefined) {
+      patch.summary = summary;
+      patch.title = rec.title || summary.title;
+    }
+    if (mindmap !== undefined) patch.mindmap = mindmap;
+    if (sprouts !== undefined) patch.sprouts = { ...sprouts, generatedAt: new Date().toISOString() };
+    store.update(id, patch);
+    console.log(`[pipeline] ${id} 完成 parts=${[...requested].join(',')} (asr=${(cur.providers || {}).asr || asr.name}, llm=${llm.name})`);
   } catch (err) {
     console.error(`[pipeline] ${id} 失败:`, err.message);
     store.update(id, { status: 'error', error: err.message });

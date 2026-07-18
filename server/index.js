@@ -79,7 +79,7 @@ app.get('/download/:token', async (req, res) => {
     }
     if (grant.format === 'sprouts') {
       res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="sprouts.md"; filename*=UTF-8''${encodeURIComponent(name + '-灵感发芽.md')}`);
+      res.setHeader('Content-Disposition', `attachment; filename="sprouts.md"; filename*=UTF-8''${encodeURIComponent(name + '-发芽报告.md')}`);
       return res.send('\uFEFF' + buildSproutsMarkdown(rec));
     }
     res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
@@ -165,19 +165,37 @@ app.post('/api/recordings/:id/export-link', (req, res) => {
   });
 });
 
-// 重新生成（有转写稿时只重跑 LLM；?full=1 重新转写；?provider=local|xfyun|dashscope 换引擎重转）
+// 按需重新生成：part=summary|sprouts|mindmap|proofread|ai|all；full=1 才重新转写。
 app.post('/api/recordings/:id/reprocess', (req, res) => {
   const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
-  const patch = { status: 'uploaded', error: null };
-  if (req.query.full === '1') patch.transcript = null;
-  if (['dashscope', 'xfyun', 'volcengine', 'local', 'mock'].includes(req.query.provider)) {
-    patch.asrProvider = req.query.provider;
+  if (!['done', 'error'].includes(rec.status)) return res.status(409).json({ error: '录音正在处理中，请完成后再重新生成' });
+  const part = String(req.query.part || 'ai');
+  const choices = {
+    summary: ['summary'],
+    sprouts: ['sprouts'],
+    mindmap: ['mindmap'],
+    proofread: ['proofread'],
+    ai: ['summary', 'sprouts', 'mindmap'],
+    all: ['proofread', 'summary', 'sprouts', 'mindmap'],
+  };
+  if (!choices[part]) return res.status(400).json({ error: 'part must be summary, sprouts, mindmap, proofread, ai or all' });
+  const provider = ['dashscope', 'xfyun', 'volcengine', 'local', 'mock'].includes(req.query.provider)
+    ? req.query.provider : null;
+  const full = req.query.full === '1' || !!provider;
+  const parts = full ? choices.all : choices[part];
+  const patch = { status: full ? 'uploaded' : 'summarizing', error: null };
+  if (parts.includes('summary')) patch.summary = null;
+  if (parts.includes('sprouts')) patch.sprouts = null;
+  if (parts.includes('mindmap')) patch.mindmap = null;
+  if (full) patch.transcript = null;
+  if (provider) {
+    patch.asrProvider = provider;
     patch.transcript = null; // 换引擎必然重转
   }
   store.update(rec.id, patch);
-  pipeline.process(rec.id);
-  res.json({ ok: true });
+  pipeline.process(rec.id, { parts });
+  res.json({ ok: true, part: full ? 'full' : part, parts });
 });
 
 // 批量重命名说话人（"说话人2" -> "张总"）
@@ -277,7 +295,7 @@ app.get('/api/recordings/:id/export/srt', (req, res) => {
 app.get('/api/recordings/:id/export/sprouts.md', (req, res) => {
   const rec = store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
-  const name = `${safeExportName(rec)}-灵感发芽.md`;
+  const name = `${safeExportName(rec)}-发芽报告.md`;
   res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="sprouts.md"; filename*=UTF-8''${encodeURIComponent(name)}`);
   res.send('\uFEFF' + buildSproutsMarkdown(rec));

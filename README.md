@@ -78,13 +78,13 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 
 - 上传音频/视频文件，异步转写（说话人区分）
 - AI 多维总结：摘要 / 关键要点 / 待办 / 原话摘录
-- 灵感发芽：从真实原话与时间点选取少量“种子”，生成有边界的延展与 Aha；允许 0 条，不强行凑数
+- 灵感发芽：从真实原话选取少量“种子”，经种子提炼、历史/文学“遥远回声”、开花延展与 Aha 形成独立报告；允许 0 条，不强行凑数或伪造典故
 - 思维导图：可交互 markmap 渲染
 - 转写稿修正：说话人批量重命名、单句改派、文字纠错（点击即改）
-- 重新生成只重跑 LLM，不重复付费转写（仍会产生一次 LLM 调用费用）
+- 按项重新生成：可分别重做 AI 总结、灵感发芽、思维导图、转写稿优化，或选择全部；只有“重新转写并全部生成”会再次调用 ASR
 - 录音库全文搜索：标题、转写稿、说话人、AI 总结和灵感发芽
-- 转写稿与音频联动：点句子跳转播放，播放时高亮当前句
-- 导出：Word（总结+灵感发芽+导图大纲+全文转写稿）、TXT、SRT、发芽 Markdown、思维导图 PNG / Markdown
+- 转写稿与音频联动：点句子跳转播放，播放时高亮当前句；发芽种子回听会在该句结束时自动暂停
+- 导出：Word（总结+发芽报告+导图大纲+全文转写稿）、TXT、SRT、发芽报告 Markdown、思维导图 PNG / Markdown
 - 微信一键登录（首次授权即注册）、30 天会话、账号级录音/热词隔离
 - 私有音频播放与 ASR 临时签名下载地址
 
@@ -95,13 +95,13 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 | POST | /api/recordings | 上传音频（form-data: audio, title?），异步处理 |
 | GET | /api/recordings | 录音列表（`?q=` 全文搜索） |
 | GET | /api/recordings/:id | 详情（transcript / summary / sprouts / mindmap） |
-| POST | /api/recordings/:id/reprocess | 重新生成（?full=1 强制重新转写） |
+| POST | /api/recordings/:id/reprocess | 按项重新生成（`?part=summary|sprouts|mindmap|proofread|ai|all`；`full=1` 强制重新转写） |
 | PATCH | /api/recordings/:id/speakers | 批量重命名说话人 {from, to} |
 | PATCH | /api/recordings/:id/segments/:idx | 修改单句 {speaker?, text?} |
 | GET | /api/recordings/:id/export/docx | 导出 Word |
 | GET | /api/recordings/:id/export/txt | 导出纯文本转写稿 |
 | GET | /api/recordings/:id/export/srt | 导出 SRT 字幕 |
-| GET | /api/recordings/:id/export/sprouts.md | 导出灵感发芽 Markdown |
+| GET | /api/recordings/:id/export/sprouts.md | 导出发芽报告 Markdown |
 | GET | /api/auth/config | 登录能力配置（不含 Secret） |
 | GET | /api/auth/wechat/state | 生成一次性 OAuth state |
 | POST | /api/auth/wechat | 微信 code 换取声图会话 |

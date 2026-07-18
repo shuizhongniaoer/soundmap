@@ -13,10 +13,12 @@ const recording = {
 };
 
 recording.sprouts = { items: [{
-  title: '时间确认背后的协作', type: '方法', start: 1.25, speaker: '张总',
+  title: '时间确认背后的协作', type: '方法', start: 1.25, end: 3.5, speaker: '张总',
   source: '先确认时间。', expansion: '先确认时间，是在减少协作中的不确定性。',
+  seedSummary: '对时间的确认，其实是在为共同生活划定边界。',
+  reference: '本初子午线', echo: '人们曾用共同的时间尺度连接远方。',
   aha: '先对齐约束，再讨论方案。',
-}] };
+}], generatedAt: '2026-07-19T00:00:00.000Z' };
 
 test('builds a readable plain-text transcript', () => {
   assert.equal(buildTxt(recording), '测试会议\n\n[00:01] 张总：先确认时间。\n[01:05] 李总：明天可以。\n');
@@ -31,9 +33,11 @@ test('formats SRT timestamps and supplies a fallback end time', () => {
 
 test('exports a grounded sprout report as Markdown', () => {
   const markdown = buildSproutsMarkdown(recording);
-  assert.match(markdown, /# 测试会议 · 灵感发芽/);
+  assert.match(markdown, /# 测试会议 · 发芽报告/);
   assert.match(markdown, /种子 \[00:01\] 张总/);
   assert.match(markdown, /> 先确认时间。/);
+  assert.match(markdown, /遥远的回声 · 本初子午线/);
+  assert.match(markdown, /### 开花/);
   assert.match(markdown, /Aha：.*先对齐约束/);
 });
 

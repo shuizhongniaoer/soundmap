@@ -15,7 +15,8 @@
   .tabs { display: flex; gap: 6px; margin-top: 14px; }
   .tab { padding: 9px 20px; border-radius: 8px 8px 0 0; background: #e4e9ef; cursor: pointer; font-size: 14px; }
   .tab.on { background: var(--card); color: var(--accent); font-weight: 600; }
-  .panel { background: var(--card); border-radius: 0 12px 12px 12px; padding: 22px; min-height: 380px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .panel { background: var(--card); border-radius: 0 12px 12px 12px; padding: 22px; min-height: 380px; box-shadow: 0 1px 3px rgba(0,0,0,.06); transition:background .25s; }
+  .panel.sprout-skin { padding:0; overflow:hidden; background:#f1ecdf; border-radius:0 2px 2px 2px; box-shadow:0 12px 36px rgba(66,54,34,.15); }
   .seg { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0f3f6; font-size: 14px; line-height: 1.7; }
   .seg.active { background: #eef5fc; box-shadow: inset 3px 0 var(--accent); }
   .seg .who { color: var(--accent); font-weight: 600; white-space: nowrap; cursor: pointer; }
@@ -39,16 +40,57 @@
   .err { color: #c0392b; }
   button.re { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
   button.re:disabled { cursor: wait; opacity: .55; }
-  .sprout-intro { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:16px; color:var(--muted); font-size:13px; line-height:1.6; }
-  .sprout-card { background:#fffdf7; border:1px solid #e8e1cc; border-radius:12px; padding:20px; margin-bottom:16px; box-shadow:0 2px 8px rgba(75,65,35,.06); }
-  .sprout-head { display:flex; align-items:center; gap:9px; margin-bottom:12px; }
-  .sprout-no { font:600 12px ui-monospace,monospace; color:#9a8354; }
-  .sprout-type { font-size:12px; color:#487c3d; background:#edf5e9; border-radius:20px; padding:3px 10px; }
-  .sprout-title { font-size:17px; font-weight:650; color:#27382b; }
-  .seed-box { border-left:3px solid #6d9b59; background:#f4f8f1; padding:11px 13px; border-radius:0 8px 8px 0; font-size:13px; line-height:1.7; color:#455245; }
-  .seed-jump { background:none; border:0; color:#487c3d; padding:0; margin:0 0 4px; cursor:pointer; font-size:12px; }
-  .sprout-expand { font-size:14px; line-height:1.85; margin:14px 0; white-space:pre-wrap; }
-  .sprout-aha { color:#8b681d; background:#fff7dc; border-radius:8px; padding:10px 12px; font-size:14px; line-height:1.7; }
+  dialog.regen { width:min(620px,calc(100vw - 32px)); border:0; border-radius:16px; padding:0; color:var(--text); box-shadow:0 22px 70px rgba(18,31,45,.28); }
+  dialog.regen::backdrop { background:rgba(25,36,48,.46); backdrop-filter:blur(2px); }
+  .regen-head { padding:22px 24px 16px; border-bottom:1px solid #e9edf1; }
+  .regen-head h2 { font-size:19px; margin-bottom:7px; }
+  .regen-head p { color:var(--muted); font-size:12px; line-height:1.7; }
+  .regen-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:18px 24px; }
+  .regen-choice { text-align:left; border:1px solid #dfe5ea; background:#fff; border-radius:10px; padding:13px 14px; cursor:pointer; color:var(--text); }
+  .regen-choice:hover { border-color:var(--accent); background:#f6f9fc; }
+  .regen-choice b { display:block; font-size:14px; margin-bottom:5px; }
+  .regen-choice small { display:block; color:var(--muted); font-size:11px; line-height:1.55; }
+  .regen-choice.all { border-color:#b7c8a8; background:#f6f9f2; }
+  .regen-choice.danger { border-color:#e3c3bb; background:#fff8f6; }
+  .regen-foot { display:flex; justify-content:flex-end; padding:0 24px 20px; }
+  .regen-cancel { border:0; background:#eef2f5; padding:8px 18px; border-radius:8px; cursor:pointer; }
+  .sprout-report { min-height:520px; color:#2f2b23; font-family:"Songti SC","STSong","Noto Serif CJK SC",serif; background-color:#f4efe3; background-image:radial-gradient(rgba(82,66,39,.06) .65px,transparent .65px),linear-gradient(90deg,rgba(255,255,255,.22),transparent 45%,rgba(76,55,25,.025)); background-size:5px 5px,100% 100%; }
+  .sprout-cover { padding:34px 42px 28px; border-bottom:1px solid rgba(70,57,36,.25); display:grid; grid-template-columns:1fr auto; gap:8px 24px; align-items:end; position:relative; }
+  .sprout-cover:after { content:""; position:absolute; left:42px; bottom:-1px; width:76px; border-bottom:3px solid #546b42; }
+  .sprout-kicker { grid-column:1/-1; font:600 10px/1.4 ui-monospace,monospace; letter-spacing:.22em; color:#7e745f; }
+  .sprout-report-title { font-size:36px; line-height:1; letter-spacing:.12em; font-weight:800; }
+  .sprout-date { font:12px/1.5 ui-monospace,monospace; color:#756b58; text-align:right; }
+  .sprout-deck { grid-column:1/-1; max-width:640px; margin-top:9px; font-size:13px; line-height:1.8; color:#736b5d; letter-spacing:.035em; }
+  .sprout-tools { display:flex; justify-content:space-between; gap:14px; align-items:center; padding:14px 42px; border-bottom:1px solid rgba(70,57,36,.14); color:#756c5c; font-size:12px; line-height:1.7; }
+  .sprout-tools button.re { border-color:#756a53; color:#564b38; font-family:inherit; }
+  .sprout-body { padding:8px 42px 44px; }
+  .sprout-card { padding:30px 0 34px; border-bottom:1px solid rgba(74,60,36,.2); }
+  .sprout-card:last-child { border-bottom:0; }
+  .sprout-head { display:grid; grid-template-columns:42px 1fr; column-gap:12px; align-items:start; margin-bottom:20px; }
+  .sprout-no { grid-row:1/3; font:700 24px/1 ui-monospace,monospace; color:#9d8655; padding-top:3px; }
+  .sprout-title { font-size:23px; line-height:1.35; font-weight:800; letter-spacing:.045em; }
+  .sprout-type { font:600 10px/1.5 ui-monospace,monospace; color:#587348; letter-spacing:.14em; margin-top:4px; }
+  .seed-box { margin-left:54px; border-left:2px solid #71885f; background:rgba(239,244,230,.72); padding:14px 17px; font-size:13px; line-height:1.8; color:#45473d; }
+  .seed-jump { background:none; border:0; color:#4c6840; padding:0; margin:0 0 7px; cursor:pointer; font:600 11px/1.5 ui-monospace,monospace; letter-spacing:.04em; }
+  .seed-summary { margin:16px 0 0 54px; font-size:15px; line-height:1.95; color:#4a4439; }
+  .sprout-section { margin:25px 0 0 54px; }
+  .sprout-section-label { display:flex; align-items:center; gap:9px; margin-bottom:9px; font:700 11px/1.4 ui-monospace,monospace; letter-spacing:.13em; color:#8a7040; }
+  .sprout-section-label:after { content:""; height:1px; flex:1; background:rgba(118,92,47,.18); }
+  .sprout-reference { font-size:17px; font-weight:700; margin-bottom:8px; color:#44392b; }
+  .sprout-echo,.sprout-expand { font-size:14px; line-height:2; white-space:pre-wrap; text-align:justify; }
+  .sprout-expand:first-letter { font-size:1.65em; font-weight:700; color:#5c744d; }
+  .sprout-aha { margin:25px 0 0 54px; padding:13px 16px; color:#72591f; background:rgba(255,246,208,.62); border-top:1px solid rgba(166,128,48,.28); border-bottom:1px solid rgba(166,128,48,.28); font-size:14px; line-height:1.8; }
+  .sprout-growing { min-height:520px; display:flex; flex-direction:column; justify-content:center; align-items:center; color:#665e4f; font-family:"Songti SC","STSong",serif; background:#f4efe3; text-align:center; }
+  .growing-mark { position:relative; width:74px; height:74px; margin-bottom:22px; }
+  .growing-mark span { position:absolute; left:34px; bottom:5px; width:6px; height:6px; border-radius:50%; background:#637b51; animation:grow 2.8s ease-in-out infinite; transform-origin:bottom; }
+  .growing-mark span:nth-child(2) { animation-delay:.55s; transform:rotate(55deg); }
+  .growing-mark span:nth-child(3) { animation-delay:1.1s; transform:rotate(-55deg); }
+  .growing-steps { display:flex; gap:18px; margin-top:13px; font:10px ui-monospace,monospace; letter-spacing:.12em; color:#908673; }
+  .growing-steps span { animation:pulse 2.8s infinite; }
+  .growing-steps span:nth-child(2){animation-delay:.55s}.growing-steps span:nth-child(3){animation-delay:1.1s}
+  @keyframes grow { 0%,100%{height:6px;opacity:.3} 45%{height:62px;border-radius:60% 60% 45% 45%;opacity:1} }
+  @keyframes pulse { 0%,100%{opacity:.3} 45%{opacity:1;color:#536e45} }
+  @media(max-width:640px){.sprout-cover{padding:28px 22px 24px}.sprout-cover:after{left:22px}.sprout-report-title{font-size:30px}.sprout-tools{padding:13px 22px;align-items:flex-start}.sprout-body{padding:4px 22px 34px}.seed-box,.seed-summary,.sprout-section,.sprout-aha{margin-left:0}.sprout-head{grid-template-columns:34px 1fr}.sprout-no{font-size:19px}.sprout-title{font-size:20px}.regen-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -60,7 +102,7 @@
       <button class="re" onclick="exportWord()">导出 Word</button>
       <button class="re" onclick="exportTranscript('txt')">导出 TXT</button>
       <button class="re" onclick="exportTranscript('srt')">导出 SRT</button>
-      <button class="re" id="reprocess-btn" onclick="reprocess()">重新生成</button>
+      <button class="re" id="reprocess-btn" onclick="openReprocess()">重新生成</button>
     </div>
   </div>
   <audio id="player" controls preload="none"></audio>
@@ -85,6 +127,19 @@
   </div>
 </div>
 
+<dialog class="regen" id="regen-dialog">
+  <div class="regen-head"><h2>想重新生成哪一部分？</h2><p>单项生成只调用对应能力。除最后一项外，都不会重新转写，也不会覆盖人工修改。</p></div>
+  <div class="regen-grid">
+    <button class="regen-choice" onclick="runReprocess('summary')"><b>AI 总结</b><small>重新生成摘要、关键要点、待办和原话摘录</small></button>
+    <button class="regen-choice" onclick="runReprocess('sprouts')"><b>灵感发芽</b><small>重新筛种、寻找遥远回声并生成发芽报告</small></button>
+    <button class="regen-choice" onclick="runReprocess('mindmap')"><b>思维导图</b><small>只重建导图结构，不改动其他内容</small></button>
+    <button class="regen-choice" onclick="runReprocess('proofread')"><b>转写稿优化</b><small>基于上下文谨慎纠错，保留识别原文供核对</small></button>
+    <button class="regen-choice all" onclick="runReprocess('all')"><b>全部重新生成</b><small>优化转写稿，并重做总结、发芽和思维导图</small></button>
+    <button class="regen-choice danger" onclick="runReprocess('all', true)"><b>重新转写并全部生成</b><small>覆盖人工修正，重新产生 ASR 和大模型调用费用</small></button>
+  </div>
+  <div class="regen-foot"><button class="regen-cancel" onclick="document.getElementById('regen-dialog').close()">取消</button></div>
+</dialog>
+
 <script src="/vendor/d3.min.js"></script>
 <script src="/vendor/markmap-lib.js"></script>
 <script src="/vendor/markmap-view.js"></script>
@@ -101,6 +156,7 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   t.classList.add('on');
   ['transcript', 'summary', 'sprouts', 'mindmap'].forEach(p =>
     document.getElementById('p-' + p).hidden = p !== t.dataset.p);
+  document.querySelector('.panel').classList.toggle('sprout-skin', t.dataset.p === 'sprouts');
   if (t.dataset.p === 'mindmap') renderMindmap();
 });
 
@@ -164,7 +220,7 @@ function renderSprouts() {
   const items = rec && rec.sprouts && Array.isArray(rec.sprouts.items) ? rec.sprouts.items : null;
   if (items == null) {
     el.innerHTML = !rec || !['done', 'error'].includes(rec.status)
-      ? '<div class="status">正在寻找值得继续想的种子…</div>'
+      ? `<div class="sprout-growing"><div class="growing-mark"><span></span><span></span><span></span></div><b>有些念头，需要一点时间才肯显出形状</b><div class="growing-steps"><span>筛选种子</span><span>寻找回声</span><span>等待开花</span></div></div>`
       : '<div class="status">这条旧录音还没有生成发芽，点击右上角“重新生成”即可补上。</div>';
     return;
   }
@@ -172,17 +228,33 @@ function renderSprouts() {
     el.innerHTML = '<div class="status">这段录音没有足够扎实的发芽点。宁缺毋滥，不为凑数硬掰。</div>';
     return;
   }
-  el.innerHTML = `<div class="sprout-intro"><span>从原话种子继续生长的 AI 延展，不等同于事实摘要，请结合上下文判断。</span><button class="re" onclick="exportSprouts()">导出 Markdown</button></div>` +
-    items.map((item, index) => `<article class="sprout-card">
-      <div class="sprout-head"><span class="sprout-no">${String(index + 1).padStart(2, '0')}</span><span class="sprout-type">${esc(item.type || '联想')}</span><span class="sprout-title">${esc(item.title)}</span></div>
-      <div class="seed-box"><button class="seed-jump" data-start="${Number(item.start) || 0}">🌱 种子 · ${fmt(item.start || 0)} ${esc(item.speaker || '')} · 点击回听</button><br>“${esc(item.source)}”</div>
-      <div class="sprout-expand">${esc(item.expansion)}</div>
-      <div class="sprout-aha">✨ <b>Aha</b>　${esc(item.aha)}</div>
-    </article>`).join('');
+  const reportDate = new Date((rec.sprouts && rec.sprouts.generatedAt) || rec.updatedAt || rec.createdAt || Date.now())
+    .toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit' }).replaceAll('/', ' · ');
+  el.innerHTML = `<div class="sprout-report">
+    <header class="sprout-cover"><div class="sprout-kicker">SOUNDMAP · SPROUT REPORT</div><div class="sprout-report-title">发芽报告</div><div class="sprout-date">${esc(reportDate)}<br>${items.length} 枚种子</div><div class="sprout-deck">从一段声音里拾取尚未说完的念头，让它越过日常，与更辽阔的人类经验彼此照亮。</div></header>
+    <div class="sprout-tools"><span>这是 AI 的启发式延展，不等同于事实摘要；典故与判断值得继续核验。</span><button class="re" onclick="exportSprouts()">导出报告</button></div>
+    <main class="sprout-body">${items.map((item, index) => `<article class="sprout-card">
+      <div class="sprout-head"><span class="sprout-no">${String(index + 1).padStart(2, '0')}</span><span class="sprout-title">${esc(item.title)}</span><span class="sprout-type">${esc(item.type || '联想')} · GERMINATION</span></div>
+      <div class="seed-box"><button class="seed-jump" data-start="${Number(item.start) || 0}" data-end="${sproutEnd(item)}">🌱 种子 · ${fmt(item.start || 0)} ${esc(item.speaker || '')} · 回听这一句</button><br>“${esc(item.source)}”</div>
+      ${item.seedSummary ? `<div class="seed-summary">${esc(item.seedSummary)}</div>` : ''}
+      ${item.echo ? `<section class="sprout-section"><div class="sprout-section-label">遥远的回声</div><div class="sprout-reference">${esc(item.reference || '')}</div><div class="sprout-echo">${esc(item.echo)}</div></section>` : ''}
+      <section class="sprout-section"><div class="sprout-section-label">开花</div><div class="sprout-expand">${esc(item.expansion)}</div></section>
+      <div class="sprout-aha">✦ <b>Aha</b>　${esc(item.aha)}</div>
+    </article>`).join('')}</main></div>`;
   el.querySelectorAll('.seed-jump').forEach(button => button.onclick = () => {
-    player.currentTime = Number(button.dataset.start) || 0;
+    const start = Number(button.dataset.start) || 0;
+    const end = Number(button.dataset.end);
+    sproutPlayUntil = end > start ? end : null;
+    player.currentTime = start;
     player.play().catch(() => {});
   });
+}
+
+function sproutEnd(item) {
+  const start = Number(item.start) || 0;
+  if (Number(item.end) > start) return Number(item.end);
+  const segment = rec && rec.transcript && rec.transcript.segments && rec.transcript.segments[item.segmentIndex];
+  return segment && Number(segment.end) > start ? Number(segment.end) : start + 8;
 }
 
 function renderTranscript() {
@@ -213,6 +285,7 @@ function renderTranscript() {
 function seekToSegment(i) {
   const seg = rec && rec.transcript && rec.transcript.segments[i];
   if (!seg) return;
+  sproutPlayUntil = null;
   player.currentTime = Number(seg.start) || 0;
   player.play().catch(() => {});
   setActiveSegment(i, true);
@@ -244,7 +317,16 @@ function updateActiveSegment() {
   setActiveSegment(found);
 }
 
-player.addEventListener('timeupdate', updateActiveSegment);
+let sproutPlayUntil = null;
+player.addEventListener('timeupdate', () => {
+  updateActiveSegment();
+  if (sproutPlayUntil != null && player.currentTime >= sproutPlayUntil - 0.08) {
+    const stopAt = sproutPlayUntil;
+    sproutPlayUntil = null;
+    player.pause();
+    player.currentTime = stopAt;
+  }
+});
 player.addEventListener('seeked', updateActiveSegment);
 
 async function patchJSON(url, body) {
@@ -290,7 +372,7 @@ function editSegText(el, i) {
 let dirty = false;
 async function afterEdit(askRegen) {
   await load();
-  if (askRegen && confirm('已保存。要用修改后的内容重新生成总结和思维导图吗？\n（只重跑 AI 总结，不会重新转写、不产生转写费用）')) reprocess();
+  if (askRegen && confirm('已保存。要用修改后的内容重新生成总结、发芽和思维导图吗？\n（不会重新转写，但会产生大模型调用费用）')) runReprocess('ai');
 }
 
 function renderMindmap() {
@@ -372,27 +454,43 @@ async function exportMindmapPNG() {
   }
 }
 
-async function reprocess() {
-  const full = confirm(
-    '「确定」= 重新转写 + AI 内容（会覆盖已做的说话人/文字修正）\n' +
-    '「取消」= 只重新生成总结、发芽和导图（免费，保留修正）');
-  let q = full ? '?full=1' : '';
+function openReprocess() {
+  if (rec && !['done', 'error'].includes(rec.status)) return;
+  document.getElementById('regen-dialog').showModal();
+}
+
+async function runReprocess(part, full = false) {
+  document.getElementById('regen-dialog').close();
+  if (full && !confirm('这会重新转写音频、覆盖人工修正并产生新的转写费用。确定继续吗？')) return;
+  const params = new URLSearchParams({ part });
+  if (full) params.set('full', '1');
   if (full) {
     const cur = (rec && rec.asrProvider) || '默认';
     const p = prompt(
       `转写引擎（当前: ${cur}）\n输入 local / xfyun / volcengine 可换引擎，留空沿用当前`, '');
     if (p && ['local', 'xfyun', 'volcengine', 'dashscope', 'mock'].includes(p.trim())) {
-      q += `&provider=${p.trim()}`;
+      params.set('provider', p.trim());
     }
   }
   try {
-    const res = await fetch(`/api/recordings/${id}/reprocess${q}`, { method: 'POST' });
+    const res = await fetch(`/api/recordings/${id}/reprocess?${params}`, { method: 'POST' });
     if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
-    mmRendered = false;
-    rec = { ...(rec || {}), status: 'uploaded', sprouts: null, ...(full ? { transcript: null } : {}) };
+    const refreshAll = part === 'all';
+    rec = {
+      ...(rec || {}), status: full ? 'uploaded' : 'summarizing',
+      ...((refreshAll || part === 'summary' || part === 'ai') ? { summary: null } : {}),
+      ...((refreshAll || part === 'sprouts' || part === 'ai') ? { sprouts: null } : {}),
+      ...((refreshAll || part === 'mindmap' || part === 'ai') ? { mindmap: null } : {}),
+      ...(full ? { transcript: null } : {}),
+    };
+    if (refreshAll || part === 'mindmap' || part === 'ai') {
+      mmRendered = false;
+      document.getElementById('mindmap').innerHTML = '';
+    }
     updateProcessButton();
-    document.getElementById('p-transcript').innerHTML = '<div class="status">重新处理中…</div>';
-    document.getElementById('p-sprouts').innerHTML = '<div class="status">重新发芽中…</div>';
+    if (full) document.getElementById('p-transcript').innerHTML = '<div class="status">重新转写中…</div>';
+    if (refreshAll || part === 'summary' || part === 'ai') document.getElementById('p-summary').innerHTML = '<div class="status">总结生成中…</div>';
+    if (refreshAll || part === 'sprouts' || part === 'ai') renderSprouts();
     scheduleLoad(300);
   } catch (error) {
     alert('重新生成失败: ' + error.message);
