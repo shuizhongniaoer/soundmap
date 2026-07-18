@@ -131,8 +131,12 @@ class Qwen3Engine:
         except ImportError as e:
             raise RuntimeError("qwen-asr 未安装：先运行 ./local-asr/setup-qwen3.sh") from e
         device = os.environ.get("QWEN3_DEVICE", "cpu")  # Mac 可试 mps
+        # 优先用 setup-qwen3.sh 从 ModelScope 下到本地的模型目录（不依赖外网）
+        local_dir = os.path.join(BASE_DIR, "pretrained_models", "Qwen3-ASR-1.7B")
+        model_id = os.environ.get("QWEN3_ASR_MODEL") or (
+            local_dir if os.path.isdir(local_dir) else "Qwen/Qwen3-ASR-1.7B")
         self.model = Qwen3ASRModel.from_pretrained(
-            os.environ.get("QWEN3_ASR_MODEL", "Qwen/Qwen3-ASR-1.7B"),
+            model_id,
             dtype=torch.float32 if device == "cpu" else torch.float16,
             device_map=device,
         )
