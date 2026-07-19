@@ -4,6 +4,10 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+dependencies {
+    implementation("androidx.work:work-runtime:2.11.2")
+}
+
 android {
     namespace = "com.soundmap.soundmap"
     compileSdk = 37

@@ -22,6 +22,22 @@ void main() {
     expect(item.modifiedAt, 200);
   });
 
+  test('parses Android background scan status', () {
+    final status = CallRecordingBackgroundStatus.fromMap({
+      'enabled': true,
+      'scheduled': true,
+      'pendingCount': 3,
+      'intervalMinutes': 15,
+      'lastScanAt': 1784421000000,
+      'lastDiscovered': 2,
+      'lastError': null,
+    });
+    expect(status.scheduled, isTrue);
+    expect(status.pendingCount, 3);
+    expect(status.intervalMinutes, 15);
+    expect(status.lastDiscovered, 2);
+  });
+
   testWidgets('import page keeps file and system-share fallbacks visible',
       (tester) async {
     await tester.pumpWidget(

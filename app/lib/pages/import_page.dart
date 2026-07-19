@@ -18,6 +18,7 @@ class ImportPage extends StatefulWidget {
 class _ImportPageState extends State<ImportPage> {
   late final CallRecordingImporter _importer;
   CallRecordingDirectory? _directory;
+  CallRecordingBackgroundStatus? _backgroundStatus;
   bool _autoImport = false;
   bool _busy = false;
   String? _status;
@@ -32,12 +33,19 @@ class _ImportPageState extends State<ImportPage> {
   Future<void> _load() async {
     final directory = await _importer.getDirectory();
     final autoImport = await _importer.autoImportEnabled();
+    final backgroundStatus = await _importer.backgroundStatus();
     if (mounted) {
       setState(() {
         _directory = directory;
         _autoImport = autoImport && directory != null;
+        _backgroundStatus = backgroundStatus;
       });
     }
+  }
+
+  Future<void> _refreshBackgroundStatus() async {
+    final value = await _importer.backgroundStatus();
+    if (mounted) setState(() => _backgroundStatus = value);
   }
 
   Future<void> _pickFile() async {
@@ -84,6 +92,7 @@ class _ImportPageState extends State<ImportPage> {
         _autoImport = true;
         _status = '目录已授权，准备扫描新录音。';
       });
+      await _refreshBackgroundStatus();
       await _scan();
     } catch (error) {
       if (mounted) setState(() => _status = '目录授权失败：$error');
@@ -97,6 +106,7 @@ class _ImportPageState extends State<ImportPage> {
     }
     await _importer.setAutoImportEnabled(value);
     if (mounted) setState(() => _autoImport = value);
+    await _refreshBackgroundStatus();
   }
 
   Future<void> _scan() async {
@@ -114,6 +124,7 @@ class _ImportPageState extends State<ImportPage> {
             : '发现 ${report.discovered} 条，成功导入 ${report.imported} 条'
                 '${report.failed > 0 ? '，${report.failed} 条将在下次重试' : ''}。';
       });
+      await _refreshBackgroundStatus();
     } catch (error) {
       if (mounted) setState(() => _status = '扫描失败：$error');
     } finally {
@@ -128,6 +139,7 @@ class _ImportPageState extends State<ImportPage> {
       setState(() {
         _directory = null;
         _autoImport = false;
+        _backgroundStatus = null;
         _status = '已取消目录授权。';
       });
     }
@@ -155,7 +167,7 @@ class _ImportPageState extends State<ImportPage> {
             _section(
               icon: Icons.phone_in_talk_outlined,
               title: '通话录音自动导入',
-              subtitle: '只读取你授权的目录，不需要整盘存储权限。打开或返回声图时，会自动扫描尚未导入的录音。',
+              subtitle: '只读取你授权的目录，不需要整盘存储权限。后台发现新录音，打开声图后使用当前账号自动上传。',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -192,10 +204,14 @@ class _ImportPageState extends State<ImportPage> {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('自动扫描新录音'),
-                    subtitle: const Text('在 App 启动和回到前台时运行'),
+                    subtitle: const Text('App 退出后也由 Android 定期发现'),
                     value: _autoImport,
                     onChanged: _busy ? null : _toggleAutoImport,
                   ),
+                  if (_autoImport && _backgroundStatus != null) ...[
+                    _backgroundStatusCard(),
+                    const SizedBox(height: 10),
+                  ],
                   Wrap(spacing: 8, runSpacing: 8, children: [
                     OutlinedButton.icon(
                       onPressed: _busy ? null : _chooseDirectory,
@@ -255,6 +271,54 @@ class _ImportPageState extends State<ImportPage> {
         ],
       ),
     );
+  }
+
+  Widget _backgroundStatusCard() {
+    final value = _backgroundStatus!;
+    final lastScan = value.lastScanAt <= 0
+        ? '等待 Android 首次调度'
+        : '上次后台扫描：${_formatTimestamp(value.lastScanAt)}';
+    final details = <String>[
+      value.scheduled
+          ? '后台巡检已开启，系统择机运行（最短 ${value.intervalMinutes} 分钟周期）'
+          : '后台巡检尚未调度',
+      lastScan,
+      if (value.pendingCount > 0) '已在本机发现 ${value.pendingCount} 条，待打开 App 上传',
+      if (value.lastError != null && value.lastError!.isNotEmpty)
+        '上次异常：${value.lastError}',
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            value.scheduled ? Icons.schedule_outlined : Icons.info_outline,
+            size: 19,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              details.join('\n'),
+              style:
+                  Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.45),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTimestamp(int milliseconds) {
+    final value = DateTime.fromMillisecondsSinceEpoch(milliseconds);
+    String two(int number) => number.toString().padLeft(2, '0');
+    return '${value.month}月${value.day}日 ${two(value.hour)}:${two(value.minute)}';
   }
 
   Widget _section({

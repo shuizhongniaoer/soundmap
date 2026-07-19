@@ -43,6 +43,37 @@ class CallRecordingCandidate {
       );
 }
 
+class CallRecordingBackgroundStatus {
+  const CallRecordingBackgroundStatus({
+    required this.enabled,
+    required this.scheduled,
+    required this.pendingCount,
+    required this.intervalMinutes,
+    required this.lastScanAt,
+    required this.lastDiscovered,
+    this.lastError,
+  });
+
+  final bool enabled;
+  final bool scheduled;
+  final int pendingCount;
+  final int intervalMinutes;
+  final int lastScanAt;
+  final int lastDiscovered;
+  final String? lastError;
+
+  factory CallRecordingBackgroundStatus.fromMap(Map<Object?, Object?> map) =>
+      CallRecordingBackgroundStatus(
+        enabled: map['enabled'] == true,
+        scheduled: map['scheduled'] == true,
+        pendingCount: (map['pendingCount'] as num?)?.toInt() ?? 0,
+        intervalMinutes: (map['intervalMinutes'] as num?)?.toInt() ?? 15,
+        lastScanAt: (map['lastScanAt'] as num?)?.toInt() ?? 0,
+        lastDiscovered: (map['lastDiscovered'] as num?)?.toInt() ?? 0,
+        lastError: map['lastError']?.toString(),
+      );
+}
+
 class CallRecordingImportReport {
   const CallRecordingImportReport({
     required this.discovered,
@@ -88,11 +119,24 @@ class CallRecordingImporter {
 
   Future<bool> autoImportEnabled() async {
     if (!isSupported) return false;
-    return (await SharedPreferences.getInstance()).getBool(_autoKey) ?? false;
+    final enabled =
+        (await SharedPreferences.getInstance()).getBool(_autoKey) ?? false;
+    await _configureBackground(enabled);
+    return enabled;
   }
 
   Future<void> setAutoImportEnabled(bool value) async {
     await (await SharedPreferences.getInstance()).setBool(_autoKey, value);
+    if (isSupported) await _configureBackground(value);
+  }
+
+  Future<CallRecordingBackgroundStatus?> backgroundStatus() async {
+    if (!isSupported) return null;
+    final value = await _channel.invokeMapMethod<Object?, Object?>(
+      'backgroundStatus',
+      {'contextId': await _contextId()},
+    );
+    return value == null ? null : CallRecordingBackgroundStatus.fromMap(value);
   }
 
   Future<List<CallRecordingCandidate>> scan({int limit = 50}) async {
@@ -101,6 +145,7 @@ class CallRecordingImporter {
     final rows = await _channel.invokeListMethod<Object?>('scan', {
           'seen': seen,
           'limit': limit,
+          'contextId': await _contextId(),
         }) ??
         const [];
     return rows
@@ -135,6 +180,7 @@ class CallRecordingImporter {
       try {
         await Api.upload(file, originalName: item.name);
         await _markSeen(item.sourceId);
+        await _acknowledgeBestEffort(item.sourceId);
         imported++;
         try {
           await file.delete();
@@ -155,6 +201,8 @@ class CallRecordingImporter {
   Future<String> _seenKey() async =>
       'call_recording_seen:$userId:${await Api.base()}';
 
+  Future<String> _contextId() async => '$userId:${await Api.base()}';
+
   Future<List<String>> _seenIds() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getStringList(await _seenKey()) ?? const [];
@@ -165,6 +213,30 @@ class CallRecordingImporter {
     final key = await _seenKey();
     final values = mergeSeenIds(prefs.getStringList(key) ?? const [], sourceId);
     await prefs.setStringList(key, values);
+  }
+
+  Future<CallRecordingBackgroundStatus?> _configureBackground(
+      bool enabled) async {
+    final value = await _channel.invokeMapMethod<Object?, Object?>(
+      'configureBackground',
+      {
+        'enabled': enabled,
+        'contextId': await _contextId(),
+        'seen': await _seenIds(),
+      },
+    );
+    return value == null ? null : CallRecordingBackgroundStatus.fromMap(value);
+  }
+
+  Future<void> _acknowledgeBestEffort(String sourceId) async {
+    try {
+      await _channel.invokeMethod<void>('acknowledge', {
+        'contextId': await _contextId(),
+        'sourceId': sourceId,
+      });
+    } catch (_) {
+      // Dart's seen list remains authoritative and is synchronized on the next scan.
+    }
   }
 }
 
