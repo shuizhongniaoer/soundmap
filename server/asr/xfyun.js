@@ -5,9 +5,9 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const blobs = require('../blobs');
 
 const HOST = 'https://office-api-ist-dx.iflyaisol.com';
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
 
 function creds() {
   const appId = (process.env.XFYUN_APPID || '').trim();
@@ -96,8 +96,11 @@ module.exports = {
   name: 'xfyun',
   async transcribe({ filename }) {
     const { appId, apiKey } = creds();
-    const filePath = path.join(UPLOAD_DIR, filename);
-    const data = fs.readFileSync(filePath);
+    // 通过 blob 存储抽象层获取本地文件路径（S3 模式会下载到临时目录）
+    const local = await blobs.getAsLocalPath(filename);
+    if (!local) throw new Error(`音频文件不存在: ${filename}`);
+    const data = fs.readFileSync(local.path);
+    (local.cleanup || (() => {}))();
     const signatureRandom = random16(); // upload 与 getResult 需使用同一随机串
 
     // 1. 上传（支持 mp3/wav/pcm/opus/flac/ogg，不支持 m4a——管线已统一转 mp3）

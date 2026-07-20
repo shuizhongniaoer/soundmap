@@ -28,7 +28,6 @@ function devLoginAllowed(req) {
   if (!req) return false;
   const socketIp = normalizeIp(req.socket?.remoteAddress);
   const forwardedIp = normalizeIp(String(req.get('x-forwarded-for') || '').split(',')[0]);
-  // Only trust a proxy header when the actual peer is local/private (cpolar connects locally).
   const clientIp = forwardedIp && privateIp(socketIp) ? forwardedIp : socketIp;
   return privateIp(clientIp);
 }
@@ -62,11 +61,15 @@ function requestToken(req) {
   return parseCookie(req.get('cookie'))[COOKIE_NAME] || null;
 }
 
-function authenticate(req, res, next) {
+// Express 4 支持 async 中间件，但需要手动捕获错误
+// 这里用包装器确保 reject 会被 next(err) 捕获
+const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+const authenticate = wrap(async (req, res, next) => {
   const rawToken = requestToken(req);
   if (rawToken) {
-    const session = store.findSession(hashToken(rawToken));
-    const user = session && store.getUser(session.userId);
+    const session = await store.findSession(hashToken(rawToken));
+    const user = session && await store.getUser(session.userId);
     if (user) {
       req.authTokenHash = session.tokenHash;
       req.user = user;
@@ -74,11 +77,11 @@ function authenticate(req, res, next) {
     }
   }
   if (!config().required) {
-    req.user = store.getOrCreateLocalUser();
+    req.user = await store.getOrCreateLocalUser();
     return next();
   }
   return res.status(401).json({ error: '请先登录', code: 'AUTH_REQUIRED' });
-}
+});
 
 function issueSession(req, res, user) {
   const token = createRawToken();
@@ -101,19 +104,19 @@ function issueSession(req, res, user) {
 
 router.get('/config', (req, res) => res.json(config(req)));
 
-router.get('/wechat/state', (req, res) => {
+router.get('/wechat/state', wrap(async (req, res) => {
   if (!config().wechatEnabled) return res.status(503).json({ error: '微信登录尚未配置' });
   const state = createRawToken();
-  store.createOauthState({
+  await store.createOauthState({
     stateHash: hashToken(state),
     expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
   });
   res.json({ state });
-});
+}));
 
-router.post('/wechat', async (req, res) => {
+router.post('/wechat', wrap(async (req, res) => {
   const { code, state } = req.body || {};
-  if (!state || !store.consumeOauthState(hashToken(state))) {
+  if (!state || !(await store.consumeOauthState(hashToken(state)))) {
     return res.status(400).json({ error: '微信登录 state 无效或已过期，请重试' });
   }
   try {
@@ -122,28 +125,40 @@ router.post('/wechat', async (req, res) => {
       appId: process.env.WECHAT_APP_ID,
       appSecret: process.env.WECHAT_APP_SECRET,
     });
-    const user = store.upsertWechatUser(profile);
+    const user = await store.upsertWechatUser(profile);
     const token = issueSession(req, res, user);
     res.json({ token, user: publicUser(user) });
   } catch (error) {
     res.status(502).json({ error: `微信登录失败: ${error.message}`, code: error.code || null });
   }
-});
+}));
 
-router.post('/dev', (req, res) => {
+router.post('/dev', wrap(async (req, res) => {
   if (!devLoginAllowed(req)) return res.status(404).json({ error: '本地测试登录未开启' });
-  const user = store.getOrCreateLocalUser();
+  const user = await store.getOrCreateLocalUser();
   const token = issueSession(req, res, user);
   res.json({ token, user: publicUser(user) });
-});
+}));
 
-router.get('/me', authenticate, (req, res) => res.json({ user: publicUser(req.user) }));
+router.get('/me', authenticate, wrap(async (req, res) => {
+  const user = publicUser(req.user);
+  // 附加用户统计信息
+  let stats = { total: 0, done: 0, totalSize: 0, totalDuration: 0 };
+  try {
+    const all = await store.listForUser(req.user.id);
+    stats.total = all.length;
+    stats.done = all.filter(r => r.status === 'done').length;
+    stats.totalSize = all.reduce((sum, r) => sum + (Number(r.size) || 0), 0);
+    stats.totalDuration = all.reduce((sum, r) => sum + (Number(r.duration) || 0), 0);
+  } catch {}
+  res.json({ user: { ...user, stats } });
+}));
 
-router.post('/logout', (req, res) => {
+router.post('/logout', wrap(async (req, res) => {
   const token = requestToken(req);
-  if (token) store.deleteSession(hashToken(token));
+  if (token) await store.deleteSession(hashToken(token));
   res.clearCookie(COOKIE_NAME, { path: '/' });
   res.json({ ok: true });
-});
+}));
 
 module.exports = { router, authenticate, config, publicUser, devLoginAllowed, issueSession };

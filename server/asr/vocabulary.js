@@ -28,11 +28,11 @@ async function call(input) {
 async function sync(words, userId = 'local') {
   const suffix = userId && userId !== 'local' ? `:${userId}` : '';
   const key = `vocabularyId${suffix}`;
-  const existing = store.getMeta(key);
+  const existing = await store.getMeta(key);
   if (!words.length) {
     if (existing) {
       try { await call({ action: 'delete_vocabulary', vocabulary_id: existing }); } catch {}
-      store.setMeta(key, null);
+      await store.setMeta(key, null);
     }
     return null;
   }
@@ -49,7 +49,7 @@ async function sync(words, userId = 'local') {
   });
   const id = out.output && out.output.vocabulary_id;
   if (!id) throw new Error('创建热词表未返回 ID: ' + JSON.stringify(out));
-  store.setMeta(key, id);
+  await store.setMeta(key, id);
   return id;
 }
 

@@ -22,6 +22,7 @@ class _ImportPageState extends State<ImportPage> {
   bool _autoImport = false;
   bool _busy = false;
   String? _status;
+  double? _uploadProgress; // 0.0 ~ 1.0，null 表示不在上传中
 
   @override
   void initState() {
@@ -69,16 +70,32 @@ class _ImportPageState extends State<ImportPage> {
     if (path == null || !mounted) return;
     setState(() {
       _busy = true;
+      _uploadProgress = null;
       _status = '正在上传 ${result!.files.single.name}…';
     });
     try {
-      final rec =
-          await Api.upload(File(path), originalName: result!.files.single.name);
+      final rec = await Api.uploadFile(
+        File(path),
+        originalName: result!.files.single.name,
+        onProgress: (sent, total) {
+          if (mounted) {
+            setState(() {
+              _uploadProgress = total > 0 ? sent / total : null;
+              _status = '上传中 ${(sent / 1048576).toStringAsFixed(1)} / ${(total / 1048576).toStringAsFixed(1)} MB';
+            });
+          }
+        },
+      );
       if (mounted) Navigator.pop(context, rec['id'] as String);
     } catch (error) {
       if (mounted) setState(() => _status = '上传失败：$error');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _uploadProgress = null;
+        });
+      }
     }
   }
 
@@ -247,16 +264,31 @@ class _ImportPageState extends State<ImportPage> {
               color: Theme.of(context).colorScheme.secondaryContainer,
               child: Padding(
                 padding: const EdgeInsets.all(14),
-                child: Row(children: [
-                  if (_busy) ...[
-                    const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
-                    const SizedBox(width: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      if (_busy) ...[
+                        const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2)),
+                        const SizedBox(width: 12),
+                      ],
+                      Expanded(child: Text(_status!)),
+                    ]),
+                    if (_uploadProgress != null) ...[
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: _uploadProgress,
+                          minHeight: 6,
+                        ),
+                      ),
+                    ],
                   ],
-                  Expanded(child: Text(_status!)),
-                ]),
+                ),
               ),
             ),
           ],

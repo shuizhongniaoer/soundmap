@@ -160,4 +160,13 @@ async function buildDocx(rec) {
   return Packer.toBuffer(doc);
 }
 
-module.exports = { buildDocx, buildTxt, buildSrt, buildSproutsMarkdown, srtTime };
+function buildMindmapMarkdown(rec) {
+  const title = rec.title || rec.originalName || '录音记录';
+  const mindmap = rec.mindmap;
+  if (!mindmap) return `# ${title}\n\n思维导图尚未生成。\n`;
+  // rec.mindmap 本身就是 markmap 格式的 Markdown 文本
+  // 加上标题行和来源信息
+  return `# ${title}\n\n> 由声图 SoundMap 生成 · ${new Date(rec.createdAt).toLocaleString('zh-CN')}\n\n${mindmap}\n`;
+}
+
+module.exports = { buildDocx, buildTxt, buildSrt, buildSproutsMarkdown, buildMindmapMarkdown, srtTime };

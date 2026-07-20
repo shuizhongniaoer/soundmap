@@ -26,8 +26,26 @@
   .b-working { background: #fff4e0; color: #b26a00; }
   .empty { color: var(--muted); text-align: center; padding: 24px; }
   .match { font-size: 12px; color: #526679; margin-top: 5px; max-width: 650px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .filter-bar select { font-size: 13px; padding: 4px 10px; border: 1px solid #d0d8e0; border-radius: 6px; background: #fff; color: #333; cursor: pointer; }
+  .tag-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tag-filter .chip { font-size: 12px; padding: 3px 10px; border-radius: 16px; background: #eef3f8; color: var(--accent); cursor: pointer; }
+  .tag-filter .chip.on { background: var(--accent); color: #fff; }
+  .item-tags { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .item-tags .ft { font-size: 11px; padding: 1px 7px; border-radius: 10px; }
+  .item-tags .ft.folder { background: #e3edf6; color: #2e5a88; }
+  .item-tags .ft.tag { background: #f0f0f0; color: #666; }
+  .btn-clear { font-size: 12px; padding: 3px 10px; border-radius: 16px; border: 1px solid #ccc; background: #fff; color: #666; cursor: pointer; }
   .auth-mask { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(245,247,250,.96); padding: 24px; }
   .auth-box { width: min(400px, 100%); background: #fff; border-radius: 16px; padding: 30px; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.12); }
+  .account-bar { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
+  .account-bar .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; }
+  .account-bar .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; }
+  .account-bar .sync-dot.working { background: #ff9800; animation: pulse 1.5s infinite; }
+  .account-bar .sync-dot.error { background: #f44336; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .sync-detail { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .sync-detail span { margin-right: 12px; }
 </style>
 </head>
 <body>
@@ -37,7 +55,17 @@
   <button id="devLogin" style="display:none">本地测试登录</button>
 </div></div>
 <div class="wrap">
-  <h1>声图 <small>录音 → 转写 → AI 总结 → 思维导图</small></h1>
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <h1>声图 <small>录音 → 转写 → AI 总结 → 思维导图</small></h1>
+    <div class="account-bar" id="accountBar" style="display:none">
+      <div class="avatar" id="userAvatar">?</div>
+      <div>
+        <div id="userName">声图用户</div>
+        <div class="sync-detail" id="syncDetail"></div>
+      </div>
+      <div class="sync-dot" id="syncDot"></div>
+    </div>
+  </div>
 
   <div class="card">
     <div class="drop" id="drop">点击或拖拽上传音频文件（mp3 / m4a / wav / mp4 …）</div>
@@ -54,6 +82,15 @@
       <button id="submit" disabled>上传并开始处理</button>
       <button id="recBtn" style="background:#c0392b">🎙️ 录音</button>
       <span id="recHint" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+    <div id="progressWrap" style="display:none;margin-top:10px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px">
+        <span id="progressLabel">上传中…</span>
+        <span id="progressPct"></span>
+      </div>
+      <div style="background:#e2e8f0;border-radius:4px;height:6px;overflow:hidden">
+        <div id="progressBar" style="background:var(--accent);height:100%;width:0%;transition:width .2s"></div>
+      </div>
     </div>
   </div>
 
@@ -72,6 +109,14 @@
 
   <div class="card">
     <input type="text" id="search" placeholder="搜索标题、转写全文、说话人或 AI 总结" style="margin:0 0 10px">
+    <div class="filter-bar" id="filterBar" style="display:none">
+      <select id="folderFilter">
+        <option value="">全部文件夹</option>
+        <option value="__none__">未分类</option>
+      </select>
+      <button class="btn-clear" id="clearFilter" style="display:none" onclick="clearFilters()">清除筛选</button>
+    </div>
+    <div class="tag-filter" id="tagFilter" style="display:none"></div>
     <div id="list"><div class="empty">暂无录音，先上传一个试试</div></div>
   </div>
 </div>
@@ -87,6 +132,8 @@ async function ensureAuth() {
   const me = await fetch('/api/auth/me', { cache: 'no-store' });
   if (me.ok) {
     mask.style.display = 'none';
+    const { user } = await me.json();
+    loadAccountBar(user);
     return;
   }
   const cfg = await (await fetch('/api/auth/config')).json();
@@ -107,6 +154,44 @@ async function ensureAuth() {
   await new Promise(() => {});
 }
 const authReady = ensureAuth();
+
+function loadAccountBar(user) {
+  const bar = document.getElementById('accountBar');
+  const name = user.nickname || '声图用户';
+  document.getElementById('userName').textContent = name;
+  document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+  bar.style.display = 'flex';
+  loadSyncStatus();
+  setInterval(loadSyncStatus, 5000);
+}
+
+async function loadSyncStatus() {
+  try {
+    const s = await (await fetch('/api/sync/status', { cache: 'no-store' })).json();
+    const dot = document.getElementById('syncDot');
+    const detail = document.getElementById('syncDetail');
+    const processing = (s.uploaded || 0) + (s.transcribing || 0) + (s.summarizing || 0);
+    const error = s.error || 0;
+    
+    dot.className = 'sync-dot' + (processing > 0 ? ' working' : error > 0 ? ' error' : '');
+    
+    const sizeMB = ((s.totalSize || 0) / 1048576).toFixed(1);
+    const durMin = Math.round((s.totalDuration || 0) / 60);
+    const parts = [
+      `共 ${s.total || 0} 条`,
+      `已完成 ${s.done || 0}`,
+    ];
+    if (processing > 0) parts.push(`处理中 ${processing}`);
+    if (error > 0) parts.push(`失败 ${error}`);
+    parts.push(`存储 ${sizeMB} MB`);
+    if (durMin > 0) parts.push(`时长 ${durMin} 分钟`);
+    if (s.lastSyncAt) {
+      const dt = new Date(s.lastSyncAt);
+      parts.push(`最近 ${dt.getMonth()+1}/${dt.getDate()} ${dt.getHours().toString().padStart(2,'0')}:${dt.getMinutes().toString().padStart(2,'0')}`);
+    }
+    detail.innerHTML = parts.map(p => `<span>${p}</span>`).join('');
+  } catch {}
+}
 
 drop.onclick = () => fileInput.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
@@ -161,23 +246,97 @@ recBtn.onclick = async () => {
   }
 };
 
+// ===== 分片上传 =====
+const CHUNK_THRESHOLD = 10 * 1024 * 1024; // 10MB
+const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
+const progressWrap = document.getElementById('progressWrap');
+const progressBar = document.getElementById('progressBar');
+const progressLabel = document.getElementById('progressLabel');
+const progressPct = document.getElementById('progressPct');
+
+function showProgress(sent, total) {
+  const pct = total > 0 ? Math.round((sent / total) * 100) : 0;
+  progressWrap.style.display = 'block';
+  progressBar.style.width = pct + '%';
+  progressPct.textContent = pct + '%';
+  progressLabel.textContent = `上传中 ${(sent / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`;
+}
+function hideProgress() {
+  progressWrap.style.display = 'none';
+  progressBar.style.width = '0%';
+}
+
+async function uploadChunked(file, { title, asrProvider }) {
+  // 初始化
+  const initRes = await fetch('/api/uploads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, size: file.size, chunkSize: CHUNK_SIZE }),
+  });
+  if (!initRes.ok) throw new Error((await initRes.json()).error || '初始化上传失败');
+  const session = await initRes.json();
+  const { uploadId, chunkSize, totalChunks } = session;
+
+  // 查询已上传分片（断点续传）
+  let received = new Set();
+  try {
+    const stRes = await fetch(`/api/uploads/${uploadId}`);
+    if (stRes.ok) {
+      const st = await stRes.json();
+      received = new Set(st.received || []);
+    }
+  } catch {}
+
+  // 上传缺失分片
+  for (let i = 0; i < totalChunks; i++) {
+    if (received.has(i)) continue;
+    const start = i * chunkSize;
+    const end = Math.min(start + chunkSize, file.size);
+    const chunk = file.slice(start, end);
+    const res = await fetch(`/api/uploads/${uploadId}/chunks/${i}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: chunk,
+    });
+    if (!res.ok) throw new Error(`分片 ${i} 上传失败: HTTP ${res.status}`);
+    showProgress(end, file.size);
+  }
+
+  // 完成
+  const completeRes = await fetch(`/api/uploads/${uploadId}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, asrProvider }),
+  });
+  if (!completeRes.ok) throw new Error((await completeRes.json()).error || '完成上传失败');
+  return await completeRes.json();
+}
+
 submitBtn.onclick = async () => {
   await authReady;
   submitBtn.disabled = true;
   submitBtn.textContent = '上传中…';
-  const fd = new FormData();
-  fd.append('audio', picked);
-  fd.append('title', document.getElementById('title').value);
-  fd.append('asrProvider', document.querySelector('input[name=engine]:checked').value);
+  const title = document.getElementById('title').value;
+  const asrProvider = document.querySelector('input[name=engine]:checked').value;
   try {
-    const res = await fetch('/api/recordings', { method: 'POST', body: fd });
-    const rec = await res.json();
-    if (!res.ok) throw new Error(rec.error);
+    let rec;
+    if (picked.size >= CHUNK_THRESHOLD) {
+      rec = await uploadChunked(picked, { title, asrProvider });
+    } else {
+      const fd = new FormData();
+      fd.append('audio', picked);
+      fd.append('title', title);
+      fd.append('asrProvider', asrProvider);
+      const res = await fetch('/api/recordings', { method: 'POST', body: fd });
+      rec = await res.json();
+      if (!res.ok) throw new Error(rec.error);
+    }
     location.href = `/detail.html?id=${rec.id}`;
   } catch (e) {
     alert('上传失败: ' + e.message);
     submitBtn.disabled = false;
   }
+  hideProgress();
   submitBtn.textContent = '上传并开始处理';
 };
 
@@ -230,7 +389,15 @@ const STATUS = {
   summarizing: ['AI 处理中', 'b-working'], done: ['完成', 'b-done'], error: ['失败', 'b-error'],
 };
 const searchInput = document.getElementById('search');
+const folderSelect = document.getElementById('folderFilter');
+const tagFilterEl = document.getElementById('tagFilter');
+const filterBar = document.getElementById('filterBar');
+const clearBtn = document.getElementById('clearFilter');
 let searchTimer = null;
+let _folderFilter = null; // null=全部, '__none__'=未分类, 'xxx'=指定
+let _tagFilter = null;
+let _allFolders = [];
+let _allTags = [];
 
 const escapeHtml = value => String(value || '').replace(/[&<>"']/g, c => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -241,24 +408,93 @@ searchInput.oninput = () => {
   searchTimer = setTimeout(refresh, 250);
 };
 
+folderSelect.onchange = () => {
+  _folderFilter = folderSelect.value || null;
+  if (_folderFilter === '__none__') _folderFilter = '__none__';
+  updateClearBtn();
+  refresh();
+};
+
+function clearFilters() {
+  _folderFilter = null;
+  _tagFilter = null;
+  folderSelect.value = '';
+  renderTagFilter();
+  updateClearBtn();
+  refresh();
+}
+
+function updateClearBtn() {
+  const has = _folderFilter !== null || _tagFilter !== null;
+  clearBtn.style.display = has ? 'inline-block' : 'none';
+}
+
+function renderTagFilter() {
+  if (!_allTags.length) { tagFilterEl.style.display = 'none'; return; }
+  tagFilterEl.style.display = 'flex';
+  tagFilterEl.innerHTML = _allTags.map(t =>
+    `<span class="chip ${_tagFilter === t.name ? 'on' : ''}" onclick="toggleTag('${escapeHtml(t.name)}')">${escapeHtml(t.name)} (${t.count})</span>`
+  ).join('');
+}
+
+function toggleTag(name) {
+  _tagFilter = _tagFilter === name ? null : name;
+  renderTagFilter();
+  updateClearBtn();
+  refresh();
+}
+
+async function loadFilters() {
+  try {
+    const [folderRes, tagRes] = await Promise.all([
+      fetch('/api/folders', { cache: 'no-store' }).then(r => r.json()),
+      fetch('/api/tags', { cache: 'no-store' }).then(r => r.json()),
+    ]);
+    _allFolders = folderRes.folders || [];
+    _allTags = tagRes.tags || [];
+    // 渲染文件夹下拉
+    const unclassified = folderRes.unclassified || 0;
+    folderSelect.innerHTML = '<option value="">全部文件夹</option>' +
+      (unclassified > 0 ? '<option value="__none__">未分类 (' + unclassified + ')</option>' : '') +
+      _allFolders.map(f => `<option value="${escapeHtml(f.name)}">${escapeHtml(f.name)} (${f.count})</option>`).join('');
+    folderSelect.value = _folderFilter === '__none__' ? '__none__' : (_folderFilter || '');
+    filterBar.style.display = 'flex';
+    renderTagFilter();
+    updateClearBtn();
+  } catch (_) {}
+}
+
 async function refresh() {
   await authReady;
   const query = searchInput.value.trim();
-  const list = await (await fetch('/api/recordings' + (query ? `?q=${encodeURIComponent(query)}` : ''), { cache: 'no-store' })).json();
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  if (_folderFilter) params.set('folder', _folderFilter === '__none__' ? '' : _folderFilter);
+  if (_tagFilter) params.set('tag', _tagFilter);
+  const qs = params.toString();
+  const list = await (await fetch('/api/recordings' + (qs ? `?${qs}` : ''), { cache: 'no-store' })).json();
   const el = document.getElementById('list');
   if (!list.length) {
-    el.innerHTML = `<div class="empty">${query ? '没有找到匹配的录音' : '暂无录音，先上传一个试试'}</div>`;
+    el.innerHTML = `<div class="empty">${query || _folderFilter || _tagFilter ? '没有找到匹配的录音' : '暂无录音，先上传一个试试'}</div>`;
     return;
   }
   el.innerHTML = list.map(r => {
     const [label, cls] = STATUS[r.status] || [r.status, ''];
+    const tags = (r.tags || []);
+    const folder = r.folder;
+    const tagHtml = (folder || tags.length) ? `<div class="item-tags">` +
+      (folder ? `<span class="ft folder">📁 ${escapeHtml(folder)}</span>` : '') +
+      tags.map(t => `<span class="ft tag">🏷️ ${escapeHtml(t)}</span>`).join('') +
+      `</div>` : '';
     return `<div class="item" onclick="location.href='/detail.html?id=${r.id}'">
       <div><div class="t">${escapeHtml(r.title || r.originalName)}</div>
       <div class="meta">${new Date(r.createdAt).toLocaleString()} · ${(r.size / 1048576).toFixed(1)} MB</div>
+      ${tagHtml}
       ${r.match ? `<div class="match">${escapeHtml(r.match)}</div>` : ''}</div>
       <span class="badge ${cls}">${label}</span></div>`;
   }).join('');
 }
+(async () => { await authReady; await loadFilters(); })();
 refresh();
 setInterval(refresh, 3000);
 </script>

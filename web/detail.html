@@ -35,6 +35,11 @@
   h3:first-child { margin-top: 0; }
   ul { padding-left: 22px; line-height: 1.9; font-size: 14px; }
   .abstract { font-size: 14px; line-height: 1.8; background: #f2f6fa; border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 0 8px 8px 0; }
+  .qa-item { background: #f2f6fa; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
+  .tpl-sel { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tpl-sel label { font-size: 12px; color: #888; font-weight: 600; }
+  .tpl-sel select { font-size: 13px; padding: 4px 10px; border: 1px solid #d0d8e0; border-radius: 6px; background: #fff; color: #333; cursor: pointer; }
+  .tpl-sel small { font-size: 11px; color: #aaa; }
   #mindmap { width: 100%; height: 520px; }
   .status { text-align: center; color: var(--muted); padding: 80px 0; font-size: 15px; }
   .err { color: #c0392b; }
@@ -105,6 +110,7 @@
       <button class="re" id="reprocess-btn" onclick="openReprocess()">重新生成</button>
     </div>
   </div>
+  <div id="folder-tags-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"></div>
   <audio id="player" controls preload="none"></audio>
 
   <div class="tabs">
@@ -149,6 +155,7 @@ let rec = null, mmRendered = false;
 let pollTimer = null;
 let renderedTranscriptSignature = null;
 let activeSegment = -1;
+let templates = [];
 const player = document.getElementById('player');
 
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
@@ -175,6 +182,42 @@ function updateProcessButton() {
   btn.textContent = working ? '处理中…' : '重新生成';
 }
 
+function renderFolderTags() {
+  const bar = document.getElementById('folder-tags-bar');
+  if (!rec) { bar.style.display = 'none'; return; }
+  const folder = rec.folder;
+  const tags = rec.tags || [];
+  bar.style.display = 'flex';
+  bar.innerHTML =
+    `<span style="font-size:13px;color:var(--muted)">分类：</span>` +
+    (folder
+      ? `<span class="chip" style="background:#e3edf6;color:var(--accent);border-radius:16px;padding:3px 12px;font-size:13px;cursor:default">📁 ${esc(folder)}</span>`
+      : `<span style="font-size:13px;color:var(--muted)">未分类</span>`) +
+    (tags.length ? tags.map(t => `<span class="chip" style="background:#f0f0f0;color:#666;border-radius:16px;padding:3px 12px;font-size:13px;cursor:default">🏷️ ${esc(t)}</span>`).join('') : '') +
+    `<button class="re" style="font-size:12px;padding:3px 10px" onclick="editFolderTags()">编辑</button>`;
+}
+
+async function editFolderTags() {
+  const folder = prompt('文件夹（留空=未分类）：', rec.folder || '');
+  if (folder === null) return;
+  const tagsStr = prompt('标签（逗号分隔，如：重要, 待跟进）：', (rec.tags || []).join(', '));
+  if (tagsStr === null) return;
+  const tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
+  try {
+    const res = await fetch('/api/recordings/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder: folder.trim(), tags }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || '保存失败');
+    rec.folder = folder.trim() || null;
+    rec.tags = tags;
+    renderFolderTags();
+  } catch (e) {
+    alert('保存失败: ' + e.message);
+  }
+}
+
 async function load() {
   clearTimeout(pollTimer);
   try {
@@ -184,6 +227,7 @@ async function load() {
     rec = await res.json();
     updateProcessButton();
     document.getElementById('title').textContent = rec.title || rec.originalName;
+    renderFolderTags();
     const audioSrc = '/api/recordings/' + encodeURIComponent(rec.id) + '/audio';
     if (player.getAttribute('src') !== audioSrc) player.src = audioSrc;
 
@@ -195,12 +239,17 @@ async function load() {
     if (rec.transcript) renderTranscript();
     if (rec.summary) {
       const s = rec.summary;
+      const curTpl = (rec.summaryTemplate || 'auto');
+      const tplOptions = templates.map(t => `<option value="${t.id}"${t.id === curTpl ? ' selected' : ''}>${esc(t.name)}</option>`).join('');
+      const tplLabel = templates.find(t => t.id === curTpl);
       document.getElementById('p-summary').innerHTML =
+        `<div class="tpl-sel"><label>总结模板</label><select onchange="switchTemplate(this.value)">${tplOptions}</select>${tplLabel ? `<small>${esc(tplLabel.desc)}</small>` : ''}</div>` +
         (s.type ? `<span style="display:inline-block;background:#eef3f8;color:var(--accent);border-radius:20px;padding:3px 14px;font-size:12px;margin-bottom:6px">${esc(s.type)}</span>` : '') +
         `<h3>摘要</h3><div class="abstract">${esc(s.abstract || '')}</div>` +
         `<h3>关键要点</h3><ul>${(s.key_points || []).map(k => `<li>${esc(k)}</li>`).join('')}</ul>` +
         ((s.todos || []).length ? `<h3>待办事项</h3><ul>${s.todos.map(t => `<li>${esc(t.task)}${t.owner ? `（${esc(t.owner)}）` : ''}</li>`).join('')}</ul>` : '') +
-        ((s.quotes || []).length ? `<h3>原话摘录</h3><ul>${s.quotes.map(q => `<li>"${esc(q)}"</li>`).join('')}</ul>` : '');
+        ((s.quotes || []).length ? `<h3>原话摘录</h3><ul>${s.quotes.map(q => `<li>"${esc(q)}"</li>`).join('')}</ul>` : '') +
+        ((s.qa_pairs || []).length ? `<h3>问答对</h3>${s.qa_pairs.map(qa => `<div class="qa-item"><p><b>Q: ${esc(qa.q)}</b></p><p style="color:#444;margin:4px 0 0">A: ${esc(qa.a)}</p></div>`).join('')}` : '');
     }
     renderSprouts();
     if (!['done', 'error'].includes(rec.status)) scheduleLoad();
@@ -408,8 +457,7 @@ function exportSprouts() {
 
 function exportMindmapMD() {
   if (!rec || !rec.mindmap) return alert('思维导图还没生成');
-  const blob = new Blob([rec.mindmap], { type: 'text/markdown;charset=utf-8' });
-  download(URL.createObjectURL(blob), `${rec.title || '思维导图'}.md`);
+  location.href = `/api/recordings/${id}/export/mindmap.md`;
 }
 
 async function exportMindmapPNG() {
@@ -498,7 +546,32 @@ async function runReprocess(part, full = false) {
   }
 }
 
+async function switchTemplate(tplId) {
+  const cur = (rec && rec.summaryTemplate) || 'auto';
+  if (tplId === cur) return;
+  document.getElementById('p-summary').innerHTML = '<div class="status">正在用新模板生成…</div>';
+  const params = new URLSearchParams({ part: 'summary', template: tplId });
+  try {
+    const res = await fetch(`/api/recordings/${id}/reprocess?${params}`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+    rec = { ...(rec || {}), status: 'summarizing', summary: null, summaryTemplate: tplId };
+    updateProcessButton();
+    scheduleLoad(300);
+  } catch (error) {
+    alert('切换模板失败: ' + error.message);
+    scheduleLoad(0);
+  }
+}
+
+async function loadTemplates() {
+  try {
+    const res = await fetch('/api/templates');
+    if (res.ok) templates = await res.json();
+  } catch {}
+}
+
 load();
+loadTemplates();
 </script>
 </body>
 </html>

@@ -39,6 +39,11 @@
                 <data android:mimeType="video/*"/>
             </intent-filter>
         </activity>
+        <!-- 录音前台服务：app 退到后台后录音不中断 -->
+        <service
+            android:name="com.llfbandit.record.service.AudioRecordingService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -59,4 +64,11 @@
     </queries>
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 前台服务：后台持续录音 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Android 13+ 需要通知权限才能显示前台服务通知 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 防止 CPU 休眠导致录音中断 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>

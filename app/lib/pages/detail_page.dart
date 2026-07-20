@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../api.dart';
@@ -17,11 +18,19 @@ class _DetailPageState extends State<DetailPage> {
   Timer? _timer;
   WebViewController? _mmController;
   String? _mmLoaded; // 已渲染的导图内容，变化时重新加载
+  final _player = AudioPlayer();
+  bool _audioReady = false;
+  int? _currentSeg; // 当前播放到的句子索引
+  final _scrollCtrl = ScrollController();
+  List<Map<String, dynamic>> _templates = [];
+  bool _templateLoading = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _initAudio();
+    _loadTemplates();
     _timer = Timer.periodic(const Duration(seconds: 3), (_) {
       final st = _rec?['status'];
       if (st == 'done' || st == 'error') return;
@@ -32,7 +41,48 @@ class _DetailPageState extends State<DetailPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _player.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _initAudio() async {
+    try {
+      final uri = await Api.audioUri(widget.id);
+      final token = await Api.token();
+      await _player.setAudioSource(
+        AudioSource.uri(uri, headers: {
+          if (token != null) 'Authorization': 'Bearer $token',
+        }),
+      );
+      if (mounted) setState(() => _audioReady = true);
+      _player.positionStream.listen((pos) {
+        _onPositionChanged(pos.inMilliseconds / 1000.0);
+      });
+    } catch (_) {}
+  }
+
+  void _onPositionChanged(double seconds) {
+    final segs = _rec?['transcript']?['segments'] as List?;
+    if (segs == null || segs.isEmpty) return;
+    for (int i = 0; i < segs.length; i++) {
+      final s = segs[i] as Map<String, dynamic>;
+      final start = (s['start'] as num?)?.toDouble() ?? 0;
+      final end = (s['end'] as num?)?.toDouble() ?? start;
+      if (seconds >= start && seconds < end) {
+        if (_currentSeg != i && mounted) setState(() => _currentSeg = i);
+        return;
+      }
+    }
+  }
+
+  void _seekToSegment(int idx) {
+    final segs = _rec?['transcript']?['segments'] as List?;
+    if (segs == null || idx < 0 || idx >= segs.length) return;
+    final s = segs[idx] as Map<String, dynamic>;
+    final start = (s['start'] as num?)?.toDouble() ?? 0;
+    _player.seek(Duration(milliseconds: (start * 1000).toInt()));
+    _player.play();
   }
 
   Future<void> _load() async {
@@ -41,6 +91,81 @@ class _DetailPageState extends State<DetailPage> {
       if (mounted) setState(() => _rec = rec);
       _maybeRenderMindmap();
     } catch (_) {}
+  }
+
+  Future<void> _loadTemplates() async {
+    try {
+      final tpls = await Api.templates();
+      if (mounted) setState(() => _templates = tpls);
+    } catch (_) {}
+  }
+
+  Future<void> _switchTemplate(String templateId) async {
+    final current = _rec?['summaryTemplate'] as String? ?? 'auto';
+    if (templateId == current) return;
+    setState(() => _templateLoading = true);
+    try {
+      await Api.reprocess(widget.id, part: 'summary', template: templateId);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('切换模板失败: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _templateLoading = false);
+    }
+  }
+
+  Future<void> _editFolderTags() async {
+    final rec = _rec;
+    if (rec == null) return;
+    final folderCtrl = TextEditingController(text: rec['folder'] as String? ?? '');
+    final tagsCtrl = TextEditingController(text:
+        ((rec['tags'] as List?)?.cast<String>() ?? []).join(', '));
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('文件夹与标签'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: folderCtrl,
+              decoration: const InputDecoration(
+                labelText: '文件夹',
+                hintText: '如：工作、会议',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: tagsCtrl,
+              decoration: const InputDecoration(
+                labelText: '标签',
+                hintText: '逗号分隔，如：重要, 待跟进',
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('保存')),
+        ],
+      ),
+    );
+    if (result == true) {
+      try {
+        final tags = tagsCtrl.text.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
+        await Api.updateRecording(widget.id, folder: folderCtrl.text.trim(), tags: tags);
+        await _load();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: $e')));
+        }
+      }
+    }
   }
 
   Future<void> _maybeRenderMindmap() async {
@@ -86,11 +211,27 @@ window.onload = function() {
         appBar: AppBar(
           title: Text(title, overflow: TextOverflow.ellipsis),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.label_outline),
+              tooltip: '文件夹与标签',
+              onPressed: _rec == null ? null : _editFolderTags,
+            ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.ios_share),
               tooltip: '导出',
               onSelected: (v) async {
-                final format = v == 'word' ? 'docx' : v;
+                final format = v == 'word'
+                    ? 'docx'
+                    : v == 'mindmap'
+                        ? 'mindmap.md'
+                        : v == 'sprouts'
+                            ? 'sprouts.md'
+                            : v;
+                if (v == 'mindmap' && (_rec?['mindmap'] == null)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('思维导图尚未生成')));
+                  return;
+                }
                 final url = await Api.exportUrl(widget.id, format);
                 await launchUrl(url, mode: LaunchMode.externalApplication);
               },
@@ -99,8 +240,9 @@ window.onload = function() {
                 PopupMenuItem(value: 'txt', child: Text('导出 TXT')),
                 PopupMenuItem(value: 'srt', child: Text('导出 SRT 字幕')),
                 PopupMenuItem(value: 'sprouts', child: Text('导出发芽报告 Markdown')),
+                PopupMenuItem(value: 'mindmap', child: Text('导出思维导图 Markdown')),
                 PopupMenuItem(
-                    value: 'view', child: Text('浏览器打开（可导出导图 PNG/Markdown）')),
+                    value: 'view', child: Text('浏览器打开（可导出导图 PNG）')),
               ],
             ),
             PopupMenuButton<String>(
@@ -159,11 +301,15 @@ window.onload = function() {
                           style: const TextStyle(color: Colors.red)),
                     ),
                   )
-                : TabBarView(children: [
-                    _transcriptTab(rec),
-                    _summaryTab(rec),
-                    _sproutsTab(rec),
-                    _mindmapTab(rec),
+                : Column(children: [
+                    _playerBar(),
+                    Expanded(
+                        child: TabBarView(children: [
+                      _transcriptTab(rec),
+                      _summaryTab(rec),
+                      _sproutsTab(rec),
+                      _mindmapTab(rec),
+                    ])),
                   ]),
       ),
     );
@@ -177,41 +323,255 @@ window.onload = function() {
         ]),
       );
 
+  Widget _playerBar() {
+    if (!_audioReady) {
+      return const SizedBox(height: 4);
+    }
+    String fmt(Duration d) =>
+        '${d.inMinutes.toString().padLeft(2, '0')}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+    return Material(
+      elevation: 1,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        ),
+        child: Row(children: [
+          StreamBuilder<bool>(
+            stream: _player.playingStream,
+            initialData: _player.playing,
+            builder: (ctx, snap) {
+              final playing = snap.data ?? false;
+              return IconButton(
+                icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                    size: 36),
+                onPressed: () => playing ? _player.pause() : _player.play(),
+                color: Theme.of(ctx).colorScheme.primary,
+              );
+            },
+          ),
+          const SizedBox(width: 4),
+          StreamBuilder<Duration>(
+            stream: _player.positionStream,
+            initialData: Duration.zero,
+            builder: (ctx, snap) => Text(fmt(snap.data ?? Duration.zero),
+                style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()])),
+          ),
+          Expanded(
+            child: StreamBuilder<Duration>(
+              stream: _player.positionStream,
+              initialData: Duration.zero,
+              builder: (ctx, posSnap) {
+                return StreamBuilder<Duration?>(
+                  stream: _player.durationStream,
+                  initialData: _player.duration,
+                  builder: (ctx, durSnap) {
+                    final pos = posSnap.data ?? Duration.zero;
+                    final dur = durSnap.data ?? Duration.zero;
+                    final maxMs = dur.inMilliseconds.toDouble().clamp(1.0, double.infinity);
+                    return Slider(
+                      value: pos.inMilliseconds.toDouble().clamp(0.0, maxMs),
+                      max: maxMs,
+                      onChanged: (v) =>
+                          _player.seek(Duration(milliseconds: v.toInt())),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          StreamBuilder<Duration?>(
+            stream: _player.durationStream,
+            initialData: _player.duration,
+            builder: (ctx, snap) => Text(fmt(snap.data ?? Duration.zero),
+                style: TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor)),
+          ),
+          const SizedBox(width: 4),
+        ]),
+      ),
+    );
+  }
+
   Widget _transcriptTab(Map<String, dynamic> rec) {
     final segs = (rec['transcript']?['segments'] as List?) ?? [];
     if (segs.isEmpty) return _processing('转写中…');
     String fmt(num s) =>
         '${(s ~/ 60).toString().padLeft(2, '0')}:${(s % 60).toInt().toString().padLeft(2, '0')}';
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       itemCount: segs.length,
-      separatorBuilder: (_, __) => const Divider(height: 16),
+      separatorBuilder: (_, __) => const SizedBox(height: 2),
       itemBuilder: (ctx, i) {
         final s = segs[i] as Map<String, dynamic>;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Text(s['speaker'] as String? ?? '',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(ctx).colorScheme.primary)),
-              const SizedBox(width: 8),
-              Text(fmt(s['start'] as num? ?? 0),
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            ]),
-            const SizedBox(height: 4),
-            Text(s['text'] as String? ?? '',
-                style: const TextStyle(height: 1.5)),
-          ],
+        final isCurrent = _currentSeg == i;
+        final speaker = s['speaker'] as String? ?? '';
+        final text = s['text'] as String? ?? '';
+        return GestureDetector(
+          onTap: () => _seekToSegment(i),
+          onLongPress: () => _showSegmentActions(i, speaker, text),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: isCurrent
+                  ? Theme.of(ctx).colorScheme.primaryContainer.withValues(alpha: 0.35)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  GestureDetector(
+                    onTap: () => _showRenameDialog(speaker),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(speaker,
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(ctx).colorScheme.onPrimaryContainer)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(fmt(s['start'] as num? ?? 0),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(ctx).hintColor,
+                          fontFeatures: const [FontFeature.tabularFigures()])),
+                  const Spacer(),
+                  Icon(Icons.edit_outlined,
+                      size: 14, color: Theme.of(ctx).hintColor.withValues(alpha: 0.5)),
+                ]),
+                const SizedBox(height: 4),
+                Text(text, style: const TextStyle(height: 1.5, fontSize: 15)),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 
+  void _showSegmentActions(int idx, String speaker, String text) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.play_arrow),
+            title: const Text('从这里播放'),
+            onTap: () {
+              Navigator.pop(ctx);
+              _seekToSegment(idx);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.edit_outlined),
+            title: const Text('编辑文字'),
+            onTap: () {
+              Navigator.pop(ctx);
+              _editSegmentText(idx, text);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.record_voice_over_outlined),
+            title: Text('重命名 "$speaker"（全部）'),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showRenameDialog(speaker);
+            },
+          ),
+        ]),
+      ),
+    );
+  }
+
+  void _editSegmentText(int idx, String currentText) {
+    final ctrl = TextEditingController(text: currentText);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑文字'),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 5,
+          autofocus: true,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () async {
+              final newText = ctrl.text.trim();
+              if (newText.isEmpty || newText == currentText) {
+                Navigator.pop(ctx);
+                return;
+              }
+              Navigator.pop(ctx);
+              try {
+                await Api.updateSegment(widget.id, idx, text: newText);
+                await _load();
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text('保存失败: $e')));
+                }
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRenameDialog(String currentName) {
+    final ctrl = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('重命名 "$currentName"'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+              labelText: '新名称', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () async {
+              final newName = ctrl.text.trim();
+              if (newName.isEmpty || newName == currentName) {
+                Navigator.pop(ctx);
+                return;
+              }
+              Navigator.pop(ctx);
+              try {
+                await Api.renameSpeakers(widget.id,
+                    from: currentName, to: newName);
+                await _load();
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text('重命名失败: $e')));
+                }
+              }
+            },
+            child: const Text('全部替换'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _summaryTab(Map<String, dynamic> rec) {
     final s = rec['summary'] as Map<String, dynamic>?;
-    if (s == null) return _processing('AI 总结中…');
+    final currentTpl = rec['summaryTemplate'] as String? ?? 'auto';
     Widget h(String t) => Padding(
           padding: const EdgeInsets.only(top: 18, bottom: 6),
           child: Text(t,
@@ -224,11 +584,16 @@ window.onload = function() {
           padding: const EdgeInsets.only(bottom: 6),
           child: Text('• $t', style: const TextStyle(height: 1.5)),
         );
-    final todos = (s['todos'] as List?) ?? [];
-    final quotes = (s['quotes'] as List?) ?? [];
+    final todos = (s?['todos'] as List?) ?? [];
+    final quotes = (s?['quotes'] as List?) ?? [];
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // 场景模板选择器
+        _templateSelector(currentTpl),
+        if (_templateLoading || s == null)
+          _processing(_templateLoading ? '正在用新模板生成…' : 'AI 总结中…')
+        else ...[
         if (s['type'] != null)
           Align(
             alignment: Alignment.centerLeft,
@@ -257,7 +622,78 @@ window.onload = function() {
         }),
         if (quotes.isNotEmpty) h('原话摘录'),
         ...quotes.map((q) => li('"$q"')),
+        if ((s['qa_pairs'] as List?)?.isNotEmpty == true) h('问答对'),
+        ...((s['qa_pairs'] as List?) ?? []).map((qa) {
+          final m = qa as Map<String, dynamic>;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF2F6FA),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Q: ${m['q'] ?? ''}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, height: 1.5)),
+                  const SizedBox(height: 4),
+                  Text('A: ${m['a'] ?? ''}',
+                      style: const TextStyle(height: 1.5, color: Colors.black87)),
+                ],
+              ),
+            ),
+          );
+        }),
+        ],
       ],
+    );
+  }
+
+  Widget _templateSelector(String currentTpl) {
+    if (_templates.isEmpty) {
+      // 模板列表还没加载，显示当前模板名
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text('模板: $currentTpl',
+            style: TextStyle(fontSize: 13, color: Theme.of(context).hintColor)),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('总结模板',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).hintColor,
+                  fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 36,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _templates.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (ctx, i) {
+                final tpl = _templates[i];
+                final id = tpl['id'] as String;
+                final selected = id == currentTpl;
+                return ChoiceChip(
+                  label: Text(tpl['name'] as String),
+                  selected: selected,
+                  onSelected: _templateLoading
+                      ? null
+                      : (_) => _switchTemplate(id),
+                  visualDensity: VisualDensity.compact,
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 

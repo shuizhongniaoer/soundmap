@@ -31,9 +31,9 @@ function recording(id) {
 
 test('regenerating sprouts preserves summary and mindmap', async () => {
   const rec = recording('sprouts-only');
-  store.create(rec);
+  await store.create(rec);
   await pipeline.process(rec.id, { parts: ['sprouts'] });
-  const result = store.get(rec.id);
+  const result = await store.get(rec.id);
   assert.deepEqual(result.summary, rec.summary);
   assert.equal(result.mindmap, rec.mindmap);
   assert.equal(result.sprouts.items.length, 1);
@@ -42,9 +42,9 @@ test('regenerating sprouts preserves summary and mindmap', async () => {
 
 test('proofreading only does not regenerate other AI content', async () => {
   const rec = recording('proofread-only');
-  store.create(rec);
+  await store.create(rec);
   await pipeline.process(rec.id, { parts: ['proofread'] });
-  const result = store.get(rec.id);
+  const result = await store.get(rec.id);
   assert.deepEqual(result.summary, rec.summary);
   assert.equal(result.mindmap, rec.mindmap);
   assert.equal(result.sprouts, undefined);

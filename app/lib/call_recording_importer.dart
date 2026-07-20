@@ -178,7 +178,7 @@ class CallRecordingImporter {
         continue;
       }
       try {
-        await Api.upload(file, originalName: item.name);
+        await Api.uploadFile(file, originalName: item.name);
         await _markSeen(item.sourceId);
         await _acknowledgeBestEffort(item.sourceId);
         imported++;

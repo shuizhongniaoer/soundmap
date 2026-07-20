@@ -37,8 +37,8 @@ function stripFence(s) {
 
 const dashscope = {
   name: 'dashscope',
-  async summarize(segments, title) {
-    const out = await chat(prompts.summaryMessages(segments, title), { json: true });
+  async summarize(segments, title, templateId) {
+    const out = await chat(prompts.summaryMessages(segments, title, templateId), { json: true });
     return JSON.parse(stripFence(out));
   },
   async mindmap(segments, title) {
@@ -73,6 +73,10 @@ const mock = {
         { task: '设计转写失败重试与供应商降级方案', owner: null },
       ],
       quotes: ['那这个作为本周最高优先级。'],
+      qa_pairs: [
+        { q: '导出 XMind 格式需要多久？', a: '本周内完成图片导出，XMind 格式需要评估第三方库兼容性。' },
+        { q: '小米通话录音路径变了怎么办？', a: '路径配置走云端热更新，不需要发版，下周三前联调完成。' },
+      ],
     };
   },
   async proofread() {
@@ -130,7 +134,7 @@ function resolveProvider() {
 
 module.exports = {
   get name() { return resolveProvider().name; },
-  summarize(segments, title) { return resolveProvider().summarize(segments, title); },
+  summarize(segments, title, templateId) { return resolveProvider().summarize(segments, title, templateId); },
   mindmap(segments, title) { return resolveProvider().mindmap(segments, title); },
   sprouts(segments, title) { return resolveProvider().sprouts(segments, title); },
   proofread(segments, hotwords) { return resolveProvider().proofread(segments, hotwords); },

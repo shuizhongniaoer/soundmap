@@ -6,13 +6,19 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
+    "worker": "node server/worker.js",
     "test": "node --test server/*.test.js server/**/*.test.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1090.0",
+    "@aws-sdk/s3-request-presigner": "^3.1090.0",
+    "bullmq": "^5.80.9",
     "docx": "^8.5.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "multer": "^1.4.5-lts.1"
+    "ioredis": "^5.11.1",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.22.0"
   },
   "engines": {
     "node": ">=18"

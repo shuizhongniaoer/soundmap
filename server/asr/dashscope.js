@@ -5,10 +5,10 @@
 const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
 const BASE = `${HOST}/api/v1`;
 
-function getVocabularyId(userId) {
+async function getVocabularyId(userId) {
   try {
     const suffix = userId && userId !== 'local' ? `:${userId}` : '';
-    return require('../store').getMeta(`vocabularyId${suffix}`) || process.env.ASR_VOCABULARY_ID || null;
+    return await require('../store').getMeta(`vocabularyId${suffix}`) || process.env.ASR_VOCABULARY_ID || null;
   } catch {
     return process.env.ASR_VOCABULARY_ID || null;
   }
@@ -55,7 +55,7 @@ module.exports = {
           diarization_enabled: true,
           language_hints: ['zh', 'en'],
           // 热词表：优先用页面管理的词表（store.meta），兼容 .env 手动配置
-          ...(getVocabularyId(userId) ? { vocabulary_id: getVocabularyId(userId) } : {}),
+          ...(await getVocabularyId(userId) ? { vocabulary_id: await getVocabularyId(userId) } : {}),
         },
       }),
     });
