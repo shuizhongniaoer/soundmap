@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>声图分享</title>
+<style>
+  :root { --accent: #2e5a88; --bg: #f5f7fa; --card: #fff; --text: #1f2933; --muted: #7b8794; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 20px; margin: 8px 0 4px; }
+  .meta { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  audio { width: 100%; margin: 10px 0; }
+  .tabs { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
+  .tab { padding: 9px 18px; border-radius: 8px 8px 0 0; background: #e4e9ef; cursor: pointer; font-size: 14px; }
+  .tab.on { background: var(--card); color: var(--accent); font-weight: 600; }
+  .panel { background: var(--card); border-radius: 0 12px 12px 12px; padding: 20px; min-height: 320px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .seg { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0f3f6; font-size: 14px; line-height: 1.7; }
+  .seg .who { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .seg .ts { color: var(--muted); font-size: 12px; white-space: nowrap; padding-top: 3px; }
+  h3 { color: var(--accent); font-size: 15px; margin: 18px 0 8px; }
+  h3:first-child { margin-top: 0; }
+  ul { padding-left: 22px; line-height: 1.9; font-size: 14px; }
+  .abstract { font-size: 14px; line-height: 1.8; background: #f2f6fa; border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 0 8px 8px 0; }
+  #mindmap { width: 100%; height: 480px; }
+  .status { text-align: center; color: var(--muted); padding: 70px 0; font-size: 15px; }
+  .err { color: #c0392b; }
+  .pw { max-width: 340px; margin: 90px auto; background: var(--card); border-radius: 12px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,.08); text-align: center; }
+  .pw input { width: 100%; padding: 10px 12px; border: 1px solid #d6dee6; border-radius: 8px; margin: 14px 0; font-size: 14px; }
+  .pw button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 26px; font-size: 14px; cursor: pointer; }
+  .sprout { border: 1px solid #e4e9ef; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .sprout .t { font-weight: 600; margin-bottom: 6px; }
+  .sprout .badge { display: inline-block; background: #eef3f8; color: var(--accent); border-radius: 20px; padding: 1px 10px; font-size: 12px; margin-left: 8px; }
+  .sprout .src { font-size: 13px; color: var(--muted); border-left: 2px solid #d9a441; padding-left: 10px; margin-top: 8px; line-height: 1.6; }
+  .footer { text-align: center; font-size: 12px; color: var(--muted); padding: 26px 0 12px; }
+</style>
+</head>
+<body>
+<div id="app" class="wrap"><div class="status">加载中…</div></div>
+
+<script src="/vendor/d3.min.js"></script>
+<script src="/vendor/markmap-lib.js"></script>
+<script src="/vendor/markmap-view.js"></script>
+<script>
+const token = decodeURIComponent(location.pathname.split('/').pop());
+const app = document.getElementById('app');
+let data = null, mmRendered = false;
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+function askPassword(wrong) {
+  app.innerHTML = `<div class="pw">
+    <div style="font-size:16px;font-weight:600;color:var(--accent)">此分享受密码保护</div>
+    ${wrong ? '<div class="err" style="font-size:13px;margin-top:8px">密码错误，请重试</div>' : ''}
+    <input type="password" id="pwInput" placeholder="输入访问密码">
+    <button onclick="load(document.getElementById('pwInput').value)">查看</button>
+  </div>`;
+  document.getElementById('pwInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') load(e.target.value);
+  });
+}
+
+async function load(password) {
+  const res = await fetch(`/api/share/${encodeURIComponent(token)}`, {
+    headers: password ? { 'X-Share-Password': password } : {},
+  });
+  if (res.status === 401) return askPassword(false);
+  if (res.status === 403) return askPassword(true);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    app.innerHTML = `<div class="status err">${esc(body.error || '分享不可用')}</div>`;
+    return;
+  }
+  data = await res.json();
+  render();
+}
+
+function render() {
+  const tabs = [['transcript', '转写稿'], ['summary', 'AI 总结']];
+  if (data.sprouts && (data.sprouts.items || []).length) tabs.push(['sprouts', '灵感发芽']);
+  if (data.mindmap) tabs.push(['mindmap', '思维导图']);
+
+  app.innerHTML = `
+    <h1>${esc(data.title)}</h1>
+    <div class="meta">${data.createdAt ? new Date(data.createdAt).toLocaleString() + ' · ' : ''}来自声图 SoundMap 的分享</div>
+    ${data.audioUrl ? `<audio controls preload="none" src="${esc(data.audioUrl)}"></audio>` : ''}
+    <div class="tabs">${tabs.map(([k, label], i) => `<div class="tab${i === 0 ? ' on' : ''}" data-p="${k}">${label}</div>`).join('')}</div>
+    <div class="panel">${tabs.map(([k], i) => `<div id="p-${k}" ${i === 0 ? '' : 'hidden'}></div>`).join('')}</div>
+    <div class="footer">声图 SoundMap — 声音变成图，一眼看懂一小时</div>`;
+
+  app.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+    app.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    tabs.forEach(([k]) => document.getElementById('p-' + k).hidden = k !== t.dataset.p);
+    if (t.dataset.p === 'mindmap') renderMindmap();
+  });
+
+  // 转写稿
+  const tEl = document.getElementById('p-transcript');
+  const segs = (data.transcript && data.transcript.segments) || [];
+  tEl.innerHTML = segs.length
+    ? segs.map(s => `<div class="seg"><span class="ts">${fmt(s.start || 0)}</span><span class="who">${esc(s.speaker)}</span><span>${esc(s.text)}</span></div>`).join('')
+    : '<div class="status">无转写内容</div>';
+
+  // 总结
+  const s = data.summary || {};
+  document.getElementById('p-summary').innerHTML = data.summary ? (
+    (s.type ? `<span style="display:inline-block;background:#eef3f8;color:var(--accent);border-radius:20px;padding:3px 14px;font-size:12px;margin-bottom:6px">${esc(s.type)}</span>` : '') +
+    `<h3>摘要</h3><div class="abstract">${esc(s.abstract || '')}</div>` +
+    `<h3>关键要点</h3><ul>${(s.key_points || []).map(k => `<li>${esc(k)}</li>`).join('')}</ul>` +
+    ((s.todos || []).length ? `<h3>待办事项</h3><ul>${s.todos.map(t => `<li>${esc(t.task)}${t.owner ? `（${esc(t.owner)}）` : ''}</li>`).join('')}</ul>` : '') +
+    ((s.quotes || []).length ? `<h3>原话摘录</h3><ul>${s.quotes.map(q => `<li>"${esc(q)}"</li>`).join('')}</ul>` : '')
+  ) : '<div class="status">无总结</div>';
+
+  // 灵感发芽
+  const spEl = document.getElementById('p-sprouts');
+  if (spEl) {
+    spEl.innerHTML = (data.sprouts.items || []).map(it => `
+      <div class="sprout">
+        <div class="t">${esc(it.title)}${it.type ? `<span class="badge">${esc(it.type)}</span>` : ''}</div>
+        <div style="font-size:14px;line-height:1.7">${esc(it.seedSummary || '')}</div>
+        ${it.source ? `<div class="src">"${esc(it.source)}" ${it.speaker ? '—— ' + esc(it.speaker) : ''}</div>` : ''}
+      </div>`).join('');
+  }
+
+  // 导图容器
+  if (data.mindmap) document.getElementById('p-mindmap').innerHTML = '<svg id="mindmap"></svg>';
+}
+
+function renderMindmap() {
+  if (mmRendered || !data || !data.mindmap) return;
+  const { root } = new window.markmap.Transformer().transform(data.mindmap);
+  window.markmap.Markmap.create('#mindmap', { autoFit: true }, root);
+  mmRendered = true;
+}
+
+load();
+</script>
+</body>
+</html>

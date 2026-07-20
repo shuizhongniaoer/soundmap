@@ -112,7 +112,61 @@ app.get('/open/:token', async (req, res) => {
   res.redirect(`/detail.html?id=${encodeURIComponent(rec.id)}`);
 });
 
+// ---- 公开分享（无需登录，必须注册在 authenticate 之前）----
+const share = require('./share');
+
+// 分享数据：密码通过 X-Share-Password 头或 ?password= 传递
+app.get('/api/share/:token', async (req, res) => {
+  const { share: s, error } = await share.resolve(
+    req.params.token, req.get('x-share-password') || req.query.password);
+  if (error) {
+    const msg = { 401: '需要密码', 403: '密码错误', 410: '分享已过期', 404: '分享不存在或已撤销' };
+    return res.status(error).json({ error: msg[error], code: error });
+  }
+  const rec = await store.get(s.recordingId);
+  if (!rec) return res.status(404).json({ error: '分享不存在或已撤销', code: 404 });
+  res.json({
+    title: rec.title || rec.originalName || '录音',
+    createdAt: rec.createdAt,
+    transcript: rec.transcript
+      ? { segments: (rec.transcript.segments || []).map(({ speaker, text, start, end }) => ({ speaker, text, start, end })) }
+      : null,
+    summary: rec.summary || null,
+    mindmap: rec.mindmap || null,
+    sprouts: rec.sprouts || null,
+    audioUrl: rec.filename ? await blobs.getUrl(rec.filename, 3600) : null,
+  });
+});
+
+// 分享落地页
+app.get('/share/:token', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, '..', 'web', 'share.html'));
+});
+
 app.use('/api', auth.authenticate);
+
+// ---- 分享管理（录音所有者）----
+app.get('/api/recordings/:id/share', async (req, res) => {
+  const rec = await store.getForUser(req.params.id, req.user.id);
+  if (!rec) return res.status(404).json({ error: 'not found' });
+  res.json({ share: await share.statusFor(rec.id) });
+});
+
+app.post('/api/recordings/:id/share', async (req, res) => {
+  const rec = await store.getForUser(req.params.id, req.user.id);
+  if (!rec) return res.status(404).json({ error: 'not found' });
+  const { password, expiresDays } = req.body || {};
+  const created = await share.create(rec.id, req.user.id, { password, expiresDays });
+  res.json({ ...created, url: `/share/${created.token}` });
+});
+
+app.delete('/api/recordings/:id/share', async (req, res) => {
+  const rec = await store.getForUser(req.params.id, req.user.id);
+  if (!rec) return res.status(404).json({ error: 'not found' });
+  await share.revoke(rec.id);
+  res.json({ ok: true });
+});
 
 // 上传录音 -> 创建记录并入队处理
 app.post('/api/recordings', upload.single('audio'), async (req, res) => {

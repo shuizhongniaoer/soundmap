@@ -104,6 +104,7 @@
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
     <h1 id="title">加载中…</h1>
     <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+      <button class="re" onclick="sharePanel()">分享</button>
       <button class="re" onclick="exportWord()">导出 Word</button>
       <button class="re" onclick="exportTranscript('txt')">导出 TXT</button>
       <button class="re" onclick="exportTranscript('srt')">导出 SRT</button>
@@ -440,6 +441,38 @@ function download(url, name) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+// ---- 公开分享 ----
+async function sharePanel() {
+  const st = (await (await fetch(`/api/recordings/${id}/share`)).json()).share;
+  if (st && st.token) {
+    const url = `${location.origin}/share/${st.token}`;
+    const extra = `${st.hasPassword ? '（有密码）' : ''}${st.expiresAt ? '，' + new Date(st.expiresAt).toLocaleDateString() + ' 过期' : ''}`;
+    const act = prompt(`已有分享链接${extra}:\n${url}\n\n输入 copy 复制链接 / revoke 撤销分享`, 'copy');
+    if (act === 'copy') {
+      await navigator.clipboard.writeText(url).catch(() => {});
+      alert('链接已复制');
+    } else if (act === 'revoke') {
+      await fetch(`/api/recordings/${id}/share`, { method: 'DELETE' });
+      alert('已撤销，旧链接立即失效');
+    }
+    return;
+  }
+  const password = prompt('设置访问密码（留空 = 不设密码，任何人拿到链接可看）', '') ?? null;
+  if (password === null) return; // 取消
+  const days = prompt('有效期天数（留空 = 永久有效）', '');
+  if (days === null) return;
+  const res = await fetch(`/api/recordings/${id}/share`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: password.trim() || undefined, expiresDays: days.trim() || undefined }),
+  });
+  const body = await res.json();
+  if (!res.ok) return alert('创建失败: ' + (body.error || res.status));
+  const url = `${location.origin}${body.url}`;
+  await navigator.clipboard.writeText(url).catch(() => {});
+  alert(`分享链接已创建并复制:\n${url}${body.hasPassword ? '\n（访问需密码）' : ''}${body.expiresAt ? '\n过期时间: ' + new Date(body.expiresAt).toLocaleString() : ''}`);
 }
 
 function exportWord() {
