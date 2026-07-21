@@ -342,35 +342,54 @@ app.post('/api/uploads/:uploadId/complete', async (req, res) => {
   try {
     const rec = await uploads.complete(uploadId, req.user.id, async (mergedPath, mergedName, meta) => {
       const blobKey = mergedName;
-      // S3 模式：上传到对象存储后删除本地合并文件
-      if (!blobs.isLocal) {
-        try {
+      let blobSaved = false;
+      let recording = null;
+      try {
+        // S3 模式：上传到对象存储后删除本地合并文件
+        if (!blobs.isLocal) {
           await blobs.save(mergedPath, blobKey);
-          fs.unlink(mergedPath, () => {});
-        } catch (e) {
-          throw new Error(`文件上传到对象存储失败: ${e.message}`);
+          blobSaved = true;
+          await fs.promises.unlink(mergedPath).catch(() => {});
+        } else {
+          // 本地模式：移动到 uploads 目录
+          const target = path.join(blobs.uploadDir, blobKey);
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          await fs.promises.rename(mergedPath, target);
+          blobSaved = true;
         }
-      } else {
-        // 本地模式：移动到 uploads 目录
-        const target = path.join(blobs.uploadDir, blobKey);
-        fs.mkdirSync(path.dirname(target), { recursive: true });
-        await fs.promises.rename(mergedPath, target);
+        const originalName = meta.filename;
+        recording = await store.create({
+          id: crypto.randomUUID(),
+          title: (req.body?.title || '').trim() || null,
+          asrProvider,
+          originalName,
+          filename: blobKey,
+          size: meta.size,
+          status: 'uploaded',
+          userId: req.user.id,
+          folder: (req.body?.folder || '').trim() || null,
+          tags: parseTags(req.body?.tags),
+          createdAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        // 对象存储或数据库创建失败时回收已保存的媒体。
+        if (blobSaved) {
+          try { await blobs.delete(blobKey); } catch (cleanupError) {
+            console.error('[chunk-upload] 失败清理 blob:', cleanupError.message);
+          }
+        }
+        throw error;
       }
-      const originalName = meta.filename;
-      const recording = await store.create({
-        id: crypto.randomUUID(),
-        title: (req.body?.title || '').trim() || null,
-        asrProvider,
-        originalName,
-        filename: blobKey,
-        size: meta.size,
-        status: 'uploaded',
-        userId: req.user.id,
-        folder: (req.body?.folder || '').trim() || null,
-        tags: parseTags(req.body?.tags),
-        createdAt: new Date().toISOString(),
-      });
-      await queue.enqueue(recording.id);
+      try {
+        await queue.enqueue(recording.id);
+      } catch (error) {
+        // 录音和媒体已经成功保存：保留它们，标记任务错误，避免重试 complete 产生重复录音。
+        console.error(`[chunk-upload] ${recording.id} 入队失败:`, error.message);
+        return await store.update(recording.id, {
+          status: 'error',
+          error: '处理任务入队失败，请稍后重试',
+        });
+      }
       return recording;
     });
     const result = rec?.alreadyCompleted
@@ -379,7 +398,7 @@ app.post('/api/uploads/:uploadId/complete', async (req, res) => {
     if (!result) return res.status(404).json({ error: '录音不存在' });
     res.status(rec?.alreadyCompleted ? 200 : 201).json(result);
   } catch (e) {
-    res.status(e.status || 400).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.status ? e.message : '上传完成失败，请稍后重试' });
   }
 });
 

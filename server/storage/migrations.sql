@@ -40,11 +40,19 @@ CREATE TABLE IF NOT EXISTS users (
   unionid     TEXT,
   nickname    TEXT,
   avatar      TEXT,
+  country     TEXT,
+  province    TEXT,
+  city        TEXT,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_wechat_openid ON users (app_id, openid) WHERE provider = 'wechat';
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_wechat_unionid ON users (unionid) WHERE provider = 'wechat' AND unionid IS NOT NULL;
+
+-- 为已有数据库补齐微信资料字段（CREATE TABLE 不会修改已存在的 users 表）
+ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS province TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT;
 
 -- 会话表（30 天过期）
 CREATE TABLE IF NOT EXISTS sessions (

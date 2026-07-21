@@ -445,15 +445,10 @@ function download(url, name) {
 
 // ---- 公开分享 ----
 async function sharePanel() {
-  const st = (await (await fetch(`/api/recordings/${id}/share`)).json()).share;
-  if (st && st.token) {
-    const url = `${location.origin}/share/${st.token}`;
-    const extra = `${st.hasPassword ? '（有密码）' : ''}${st.expiresAt ? '，' + new Date(st.expiresAt).toLocaleDateString() + ' 过期' : ''}`;
-    const act = prompt(`已有分享链接${extra}:\n${url}\n\n输入 copy 复制链接 / revoke 撤销分享`, 'copy');
-    if (act === 'copy') {
-      await navigator.clipboard.writeText(url).catch(() => {});
-      alert('链接已复制');
-    } else if (act === 'revoke') {
+    const st = (await (await fetch(`/api/recordings/${id}/share`)).json()).share;
+  if (st && st.active) {
+    const act = prompt('已有分享链接（出于安全原因不再展示旧链接）。输入 revoke 撤销分享，或取消', 'revoke');
+    if (act === 'revoke') {
       await fetch(`/api/recordings/${id}/share`, { method: 'DELETE' });
       alert('已撤销，旧链接立即失效');
     }
