@@ -123,6 +123,6 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 
 - [x] Phase 0：Web 最小闭环 + 浏览器录音 + 编辑修正 + 导出
 - [ ] Phase 1（进行中）：Flutter App（安卓优先，录音/上传/列表/详情/微信账号隔离已完成）；待 PostgreSQL、队列与云端对象存储
-- [ ] Phase 2（已启动）：Android SAF 目录授权、WorkManager 后台发现、前台自动上传、系统分享导入和按文件名联系人归档已完成基础链路；待 iOS Share Extension、通讯录匹配、声纹资料库及生产验收
+- [ ] Phase 2（已启动）：Android SAF 目录授权、WorkManager 后台发现、前台自动上传、系统分享导入、按文件名联系人归档和自定义总结模板已完成基础链路；待 iOS Share Extension、通讯录匹配、声纹资料库及生产验收
 - [ ] Phase 3：会员体系 + 三端支付 + 国内外双站部署
 - [ ] Phase 4：实时转写、跨录音 RAG 问答、会议 Bot、团队版
