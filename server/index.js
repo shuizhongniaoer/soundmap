@@ -241,7 +241,8 @@ app.post('/api/recordings', upload.single('audio'), async (req, res) => {
       return res.status(500).json({ error: `文件上传到对象存储失败: ${e.message}` });
     }
   }
-  const rec = await store.create({
+  try {
+    const rec = await store.create({
     id: crypto.randomUUID(),
     title: (req.body.title || '').trim() || null,
     asrProvider,
@@ -253,9 +254,19 @@ app.post('/api/recordings', upload.single('audio'), async (req, res) => {
     folder: (req.body.folder || '').trim() || null,
     tags: parseTags(req.body.tags),
     createdAt: new Date().toISOString(),
-  });
-  await queue.enqueue(rec.id); // 入队（内存模式直接异步执行，Redis 模式入 BullMQ 队列）
-  res.status(201).json(rec);
+    });
+    await queue.enqueue(rec.id); // 入队（内存模式直接异步执行，Redis 模式入 BullMQ 队列）
+    res.status(201).json(rec);
+  } catch (e) {
+    // 数据库创建失败时回收已写入的 blob；对象存储删除失败仅记录日志。
+    try { await blobs.delete(blobKey); } catch (cleanupError) {
+      console.error('[upload] 失败清理 blob:', cleanupError.message);
+    }
+    if (req.file?.path && req.file.path !== path.join(blobs.uploadDir || '', blobKey)) {
+      fs.unlink(req.file.path, () => {});
+    }
+    throw e;
+  }
 });
 
 // ===== 分片上传（大文件 + 断点续传）=====
@@ -665,7 +676,14 @@ app.get('/api/recordings/:id/export/mindmap.md', async (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  res.status(400).json({ error: err.message });
+  const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 500
+    ? err.status : (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
+  const requestId = req.get('x-request-id') || crypto.randomUUID();
+  res.setHeader('X-Request-Id', requestId);
+  console.error(`[request:${requestId}] ${req.method} ${req.originalUrl} ${status}:`, err.stack || err.message);
+  if (res.headersSent) return next(err);
+  const message = status >= 500 ? '服务器内部错误，请稍后重试' : (err.message || '请求失败');
+  res.status(status).json({ error: message, requestId });
 });
 
 app.listen(PORT, () => {

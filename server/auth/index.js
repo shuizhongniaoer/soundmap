@@ -83,10 +83,10 @@ const authenticate = wrap(async (req, res, next) => {
   return res.status(401).json({ error: '请先登录', code: 'AUTH_REQUIRED' });
 });
 
-function issueSession(req, res, user) {
+async function issueSession(req, res, user) {
   const token = createRawToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  store.createSession({
+  await store.createSession({
     tokenHash: hashToken(token),
     userId: user.id,
     createdAt: new Date().toISOString(),
@@ -125,8 +125,7 @@ router.post('/wechat', wrap(async (req, res) => {
       appId: process.env.WECHAT_APP_ID,
       appSecret: process.env.WECHAT_APP_SECRET,
     });
-    const user = await store.upsertWechatUser(profile);
-    const token = issueSession(req, res, user);
+    const token = await issueSession(req, res, user);
     res.json({ token, user: publicUser(user) });
   } catch (error) {
     res.status(502).json({ error: `微信登录失败: ${error.message}`, code: error.code || null });
@@ -135,8 +134,7 @@ router.post('/wechat', wrap(async (req, res) => {
 
 router.post('/dev', wrap(async (req, res) => {
   if (!devLoginAllowed(req)) return res.status(404).json({ error: '本地测试登录未开启' });
-  const user = await store.getOrCreateLocalUser();
-  const token = issueSession(req, res, user);
+  const token = await issueSession(req, res, user);
   res.json({ token, user: publicUser(user) });
 }));
 

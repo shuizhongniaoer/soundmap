@@ -11,8 +11,11 @@ function select() {
       require('bullmq');
       return redis;
     } catch {
-      console.warn('[queue] REDIS_URL 已设置但 bullmq 未安装，降级为内存队列');
+      throw new Error('Redis 已配置但 bullmq 未安装，拒绝降级为内存队列');
     }
+  }
+  if (/^(production|prod)$/i.test(process.env.NODE_ENV || '')) {
+    throw new Error('生产环境必须配置 REDIS_URL，拒绝使用内存队列');
   }
   return memory;
 }

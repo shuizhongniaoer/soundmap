@@ -13,8 +13,11 @@ function select() {
       console.log('[storage] 使用 PostgreSQL 存储');
       return pg;
     } catch {
-      console.warn('[storage] DATABASE_URL 已设置但 pg 未安装，降级为 JSON 文件存储');
+      throw new Error('DATABASE_URL 已设置但 pg 未安装，拒绝降级为 JSON 存储');
     }
+  }
+  if (/^(production|prod)$/i.test(process.env.NODE_ENV || '')) {
+    throw new Error('生产环境必须配置 DATABASE_URL，拒绝使用 JSON 文件存储');
   }
   return json;
 }
