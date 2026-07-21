@@ -8,6 +8,7 @@ const blobs = require('./blobs');
 const asr = require('./asr');
 const llm = require('./llm');
 const { applyCorrections } = require('./llm/proofread');
+const { fetchWithTimeout } = require('./http');
 
 let ffmpegOk = null;
 function hasFfmpeg() {
@@ -49,7 +50,7 @@ async function preprocess(filename) {
 async function publicBase() {
   if (!blobs.isLocal) return null;
   try {
-    const res = await fetch('http://127.0.0.1:4040/api/tunnels', { signal: AbortSignal.timeout(2000) });
+    const res = await fetchWithTimeout('http://127.0.0.1:4040/api/tunnels', { signal: AbortSignal.timeout(2000) });
     if (res.ok) {
       const data = await res.json();
       const port = String(process.env.PORT || 3000);

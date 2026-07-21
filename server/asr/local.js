@@ -3,6 +3,7 @@
 // 注意：仅适用于本地存储模式（blobs.isLocal）。S3 模式下文件不在本地磁盘，需用云端 ASR。
 const path = require('path');
 const blobs = require('../blobs');
+const { fetchWithTimeout } = require('../http');
 
 const BASE = (process.env.LOCAL_ASR_URL || 'http://127.0.0.1:8100').replace(/\/$/, '');
 
@@ -22,7 +23,7 @@ module.exports = {
     try {
       let res;
       try {
-        res = await fetch(`${BASE}/transcribe`, {
+        res = await fetchWithTimeout(`${BASE}/transcribe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: filePath, hotwords }),
