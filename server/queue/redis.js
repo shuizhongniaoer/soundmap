@@ -8,9 +8,20 @@ try {
   // bullmq 未安装时延迟报错
 }
 
+const crypto = require('crypto');
 const QUEUE_NAME = 'soundmap:transcribe';
 let _queue = null;
 let _worker = null;
+
+function jobKey(recordingId, options = {}) {
+  const payload = JSON.stringify({
+    recordingId,
+    parts: Array.isArray(options.parts) ? [...options.parts].sort() : null,
+    summaryTemplate: options.summaryTemplate || null,
+    version: options.version || 1,
+  });
+  return `recording-${recordingId}-${crypto.createHash('sha256').update(payload).digest('hex').slice(0, 16)}`;
+}
 
 function requireBullMQ() {
   if (!Queue) throw new Error('Redis 队列模式需要安装 bullmq 和 ioredis');
@@ -40,7 +51,8 @@ module.exports = {
   async enqueue(recordingId, options = {}) {
     const queue = getQueue();
     await queue.add('transcribe', { recordingId, options }, {
-      attempts: 2,           // 失败重试 1 次
+      jobId: jobKey(recordingId, options),
+      attempts: 3,           // 初次执行失败后重试 2 次
       backoff: { type: 'exponential', delay: 5000 },
       removeOnComplete: 100, // 保留最近 100 条完成记录
       removeOnFail: 200,

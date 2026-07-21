@@ -14,8 +14,58 @@ const { searchRecordings } = require('./search');
 const auth = require('./auth');
 const { createRawToken, hashToken } = require('./auth/token');
 
-const app = express();
-app.set('trust proxy', 1);
+function contentTypeFor(name) {
+  const ext = path.extname(name || '').toLowerCase();
+  return ({
+    '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.aac': 'audio/aac',
+    '.ogg': 'audio/ogg', '.opus': 'audio/opus', '.flac': 'audio/flac', '.mp4': 'video/mp4',
+    '.webm': 'audio/webm', '.amr': 'audio/amr', '.3gp': 'video/3gpp',
+  })[ext] || 'application/octet-stream';
+}
+
+async function streamFile(req, res, filename) {
+  const stat = await fs.promises.stat(filename).catch(() => null);
+  if (!stat || !stat.isFile()) return false;
+  const total = stat.size;
+  const range = req.headers.range;
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Content-Type', contentTypeFor(filename));
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (!range) {
+    res.setHeader('Content-Length', total);
+    if (req.method === 'HEAD') return res.end();
+    fs.createReadStream(filename).pipe(res);
+    return true;
+  }
+  const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+  if (!match) { res.status(416).setHeader('Content-Range', `bytes */${total}`).end(); return true; }
+  const start = match[1] ? Number(match[1]) : Math.max(0, total - Number(match[2] || 0));
+  const end = match[2] ? Number(match[2]) : total - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= total) {
+    res.status(416).setHeader('Content-Range', `bytes */${total}`).end();
+    return true;
+  }
+  const boundedEnd = Math.min(end, total - 1);
+  res.status(206);
+  res.setHeader('Content-Range', `bytes ${start}-${boundedEnd}/${total}`);
+  res.setHeader('Content-Length', boundedEnd - start + 1);
+  if (req.method === 'HEAD') return res.end();
+  fs.createReadStream(filename, { start, end: boundedEnd }).pipe(res);
+  return true;
+}
+async function streamBlob(req, res, key) {
+  const local = await blobs.getAsLocalPath(key);
+  if (!local) return false;
+  const handled = await streamFile(req, res, local.path);
+  if (handled) {
+    res.once('close', () => local.cleanup());
+    res.once('finish', () => local.cleanup());
+  } else {
+    local.cleanup();
+  }
+  return handled;
+}
+
 const PORT = process.env.PORT || 3000;
 
 // 将逗号或换行分隔的标签字符串解析为数组
@@ -414,14 +464,16 @@ app.get('/api/recordings/:id', async (req, res) => {
   res.json(rec);
 });
 
-// 音频播放：本地模式从磁盘流式返回，S3 模式代理流
-app.get('/api/recordings/:id/audio', async (req, res) => {
+app.route('/api/recordings/:id/audio').get(async (req, res) => {
   const rec = await store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
-  res.setHeader('Cache-Control', 'private, no-store');
-  const stream = await blobs.getStream(rec.filename);
-  if (!stream) return res.status(404).json({ error: 'audio not found' });
-  stream.pipe(res);
+  if (await streamBlob(req, res, rec.filename)) return;
+  return res.status(404).json({ error: 'audio not found' });
+}).head(async (req, res) => {
+  const rec = await store.getForUser(req.params.id, req.user.id);
+  if (!rec) return res.status(404).end();
+  if (await streamBlob(req, res, rec.filename)) return;
+  return res.status(404).end();
 });
 
 app.post('/api/recordings/:id/export-link', async (req, res) => {

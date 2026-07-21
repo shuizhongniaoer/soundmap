@@ -34,12 +34,21 @@ function signature(filename, expires) {
   return crypto.createHmac('sha256', signingSecret()).update(`${filename}\n${expires}`).digest('base64url');
 }
 
+function isSafeKey(key) {
+  return typeof key === 'string' && Boolean(key) && path.basename(key) === key && !key.includes('..');
+}
+
+function assertSafeKey(key) {
+  if (!isSafeKey(key)) throw new Error('invalid blob key');
+}
+
 module.exports = {
   name: 'local',
   uploadDir: UPLOAD_DIR,
 
   // 保存本地文件到存储（本地模式下就是移动/复制到 UPLOAD_DIR）
-  async save(localPath, key) {
+  async save(localPath, key, contentType) {
+    assertSafeKey(key);
     const target = path.join(UPLOAD_DIR, key);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     // 如果已在 UPLOAD_DIR 内则跳过
@@ -50,6 +59,7 @@ module.exports = {
 
   // 保存 Buffer
   async saveBuffer(buffer, key) {
+    assertSafeKey(key);
     const target = path.join(UPLOAD_DIR, key);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     await fs.promises.writeFile(target, buffer);
@@ -57,10 +67,11 @@ module.exports = {
   },
 
   // 获取可读流（用于 HTTP 响应）
-  getStream(key) {
+  getStream(key, options = {}) {
+    if (!isSafeKey(key)) return null;
     const target = path.join(UPLOAD_DIR, key);
     if (!fs.existsSync(target)) return null;
-    return fs.createReadStream(target);
+    return fs.createReadStream(target, options);
   },
 
   // 获取 ASR 可访问的签名 URL（本地模式下是 /asr-media/ 路径）
@@ -71,16 +82,19 @@ module.exports = {
 
   // 获取本地路径（ffmpeg 预处理用。本地模式直接返回，无需清理）
   async getAsLocalPath(key) {
+    if (!isSafeKey(key)) return null;
     const target = path.join(UPLOAD_DIR, key);
-    if (!fs.existsSync(target)) return null;
     return { path: target, cleanup: () => {} };
   },
 
   async exists(key) {
-    return fs.existsSync(path.join(UPLOAD_DIR, key));
+    if (!isSafeKey(key)) return false;
+    const target = path.join(UPLOAD_DIR, key);
+    return fs.existsSync(target);
   },
 
   async delete(key) {
+    if (!isSafeKey(key)) return;
     try { await fs.promises.unlink(path.join(UPLOAD_DIR, key)); } catch { /* ignore */ }
   },
 

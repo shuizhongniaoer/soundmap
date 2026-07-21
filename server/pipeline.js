@@ -153,6 +153,7 @@ async function run(id, options = {}) {
   } catch (err) {
     console.error(`[pipeline] ${id} 失败:`, err.message);
     await store.update(id, { status: 'error', error: err.message });
+    throw err;
   } finally {
     preprocessCleanup();
   }

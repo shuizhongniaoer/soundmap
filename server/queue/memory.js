@@ -7,15 +7,20 @@ module.exports = {
   name: 'memory',
 
   async enqueue(recordingId, options = {}) {
-    // 异步执行，不阻塞 API 响应
     const pipeline = require('../pipeline');
+    const taskKey = `${recordingId}:${JSON.stringify(options)}`;
+    if (pending.has(taskKey)) return { deduplicated: true };
+    pending.set(taskKey, true);
     setImmediate(async () => {
       try {
         await pipeline.process(recordingId, options);
       } catch (err) {
         console.error(`[queue:memory] ${recordingId} 失败:`, err.message);
+      } finally {
+        pending.delete(taskKey);
       }
     });
+    return { deduplicated: false };
   },
 
   // 内存模式下 start 是空操作（pipeline 在 enqueue 时已直接执行）
