@@ -380,6 +380,7 @@ app.post('/api/uploads/:uploadId/complete', async (req, res) => {
         }
         throw error;
       }
+      // 先完成媒体和录音持久化，再入队；入队失败时保留二者并标记 error，避免录音引用不存在的文件。
       try {
         await queue.enqueue(recording.id);
       } catch (error) {

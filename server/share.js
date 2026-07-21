@@ -7,12 +7,14 @@ const hash = v => crypto.createHash('sha256').update(String(v)).digest('base64ur
 const recKey = id => `share:rec:${id}`;
 const tokKey = t => `share:tok:${hash(t)}`;
 
+// 分享密码采用随机盐 scrypt；存储格式为 scrypt$盐$派生密钥，避免弱密码被直接批量离线比对。
 function passwordHash(password) {
   const salt = crypto.randomBytes(16);
   const key = crypto.scryptSync(String(password), salt, 64);
   return `scrypt$${salt.toString('base64url')}$${key.toString('base64url')}`;
 }
 
+// 比较过程使用 timingSafeEqual；旧版无前缀 SHA-256 仅用于兼容历史数据，不再用于新分享。
 function verifyPassword(password, stored) {
   if (!stored || !password) return false;
   if (stored.startsWith('scrypt$')) {
@@ -44,7 +46,6 @@ async function create(recordingId, userId, { password, expiresDays } = {}) {
     createdAt: new Date().toISOString(),
   };
   await store.setMeta(tokKey(token), share);
-  // 管理态只保存 token 哈希，不保存可直接使用的明文分享 token。
   await store.setMeta(recKey(recordingId), {
     tokenHash: hash(token), hasPassword: Boolean(password), expiresAt: share.expiresAt, createdAt: share.createdAt,
   });
