@@ -22,6 +22,20 @@ void main() {
     expect(item.modifiedAt, 200);
   });
 
+  test('infers a contact folder from common call recording names', () {
+    final named = inferCallRecordingArchive('通话录音_张三_20260719_1530.m4a');
+    expect(named.contactName, '张三');
+    expect(named.folder, '通话录音/张三');
+    expect(named.tags, ['通话录音', '张三']);
+    expect(named.recognized, isTrue);
+
+    final phone = inferCallRecordingArchive('call_13800138000_20260719.mp3');
+    expect(phone.contactName, '未识别联系人');
+    expect(phone.folder, '通话录音/未识别联系人');
+    expect(phone.tags, ['通话录音']);
+    expect(phone.recognized, isFalse);
+  });
+
   test('parses Android background scan status', () {
     final status = CallRecordingBackgroundStatus.fromMap({
       'enabled': true,

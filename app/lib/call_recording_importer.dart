@@ -43,6 +43,59 @@ class CallRecordingCandidate {
       );
 }
 
+/// 从通话录音文件名推断联系人归档信息。
+///
+/// 只解析文件名，不读取通讯录，也不把原始电话号码作为联系人名称上传；
+/// 这样既不增加通讯录权限，也避免把电话号码误当成联系人姓名。
+class CallRecordingArchive {
+  const CallRecordingArchive({
+    required this.contactName,
+    required this.folder,
+    required this.tags,
+  });
+
+  final String contactName;
+  final String folder;
+  final List<String> tags;
+
+  bool get recognized => contactName != '未识别联系人';
+}
+
+CallRecordingArchive inferCallRecordingArchive(String filename) {
+  var value = filename.trim();
+  final extension = RegExp(r'\.[A-Za-z0-9]{1,8}$');
+  value = value.replaceFirst(extension, '');
+
+  // 去除常见的录音前缀，剩余部分再按日期、时间和号码过滤。
+  value = value.replaceFirst(
+    RegExp(r'^(?:通话录音|通话记录|录音|call[ _-]*(?:recording|rec)?)[ _-]*', caseSensitive: false),
+    '',
+  );
+  final tokens = value
+      .split(RegExp(r'[ _-]+'))
+      .map((token) => token.replaceAll(RegExp(r'^[\[（(【]+|[\]）)】]+$'), ''))
+      .map((token) => token.trim())
+      .where((token) => token.isNotEmpty)
+      .where((token) => !RegExp(r'^\d{4}$').hasMatch(token))
+      .where((token) => !RegExp(r'^\d{8}$').hasMatch(token))
+      .where((token) => !RegExp(r'^\d{6,8}[T _-]?\d{4,6}$').hasMatch(token))
+      .where((token) => !RegExp(r'^\+?\d{7,15}$').hasMatch(token))
+      .where((token) => !RegExp(r'^\d{1,2}[：:]\d{2}(?:[：:]\d{2})?$').hasMatch(token))
+      .toList();
+
+  final contactName = tokens.isEmpty
+      ? '未识别联系人'
+      : tokens.join(' ').replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ').trim();
+  final safeName = contactName.isEmpty ? '未识别联系人' : contactName;
+  final tags = <String>['通话录音'];
+  if (safeName != '未识别联系人') tags.add(safeName);
+  return CallRecordingArchive(
+    contactName: safeName,
+    folder: '通话录音/$safeName',
+    tags: tags,
+  );
+}
+
 class CallRecordingBackgroundStatus {
   const CallRecordingBackgroundStatus({
     required this.enabled,
@@ -178,7 +231,13 @@ class CallRecordingImporter {
         continue;
       }
       try {
-        await Api.uploadFile(file, originalName: item.name);
+        final archive = inferCallRecordingArchive(item.name);
+        await Api.uploadFile(
+          file,
+          originalName: item.name,
+          folder: archive.folder,
+          tags: archive.tags,
+        );
         await _markSeen(item.sourceId);
         await _acknowledgeBestEffort(item.sourceId);
         imported++;
