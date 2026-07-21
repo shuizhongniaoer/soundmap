@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const SUBMIT_URL = 'https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit';
 const QUERY_URL = 'https://openspeech.bytedance.com/api/v3/auc/bigmodel/query';
 const RESOURCE_ID = 'volc.seedasr.auc';
+const { fetchWithTimeout } = require('../http');
 
 function headers(requestId, withSequence) {
   const key = (process.env.VOLC_API_KEY || '').trim();
@@ -46,7 +47,7 @@ module.exports = {
     const requestId = crypto.randomUUID();
 
     // 1. 提交任务（结果状态在响应头 X-Api-Status-Code）
-    const sub = await fetch(SUBMIT_URL, {
+    const sub = await fetchWithTimeout(SUBMIT_URL, {
       method: 'POST',
       headers: headers(requestId, true),
       body: JSON.stringify({
@@ -70,7 +71,7 @@ module.exports = {
     // 2. 轮询（20000001/2=处理中, 20000000=完成, 20000003=静音）
     for (let i = 0; i < 120; i++) {
       await new Promise(r => setTimeout(r, 5000));
-      const res = await fetch(QUERY_URL, {
+      const res = await fetchWithTimeout(QUERY_URL, {
         method: 'POST',
         headers: headers(requestId, false),
         body: '{}',

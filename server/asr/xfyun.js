@@ -8,6 +8,7 @@ const path = require('path');
 const blobs = require('../blobs');
 
 const HOST = 'https://office-api-ist-dx.iflyaisol.com';
+const { fetchWithTimeout } = require('../http');
 
 function creds() {
   const appId = (process.env.XFYUN_APPID || '').trim();
@@ -50,7 +51,7 @@ function qs(params) {
 async function xfFetch(pathname, params, { body, contentType }) {
   const { apiSecret } = creds();
   const signature = sign(params, apiSecret);
-  const res = await fetch(`${HOST}${pathname}?${qs(params)}`, {
+  const res = await fetchWithTimeout(`${HOST}${pathname}?${qs(params)}`, {
     method: 'POST',
     headers: { 'Content-Type': contentType, signature },
     body,

@@ -3,12 +3,13 @@
 // mindmap(segments, title)   -> Markdown 大纲字符串
 const prompts = require('./prompts');
 const { normalizeSprouts } = require('./sprouts');
+const { fetchWithTimeout } = require('../http');
 
 const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
 const OPENAI_COMPAT_URL = `${HOST}/compatible-mode/v1/chat/completions`;
 
 async function chat(messages, { json = false } = {}) {
-  const res = await fetch(OPENAI_COMPAT_URL, {
+  const res = await fetchWithTimeout(OPENAI_COMPAT_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,

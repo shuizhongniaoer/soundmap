@@ -5,9 +5,10 @@ const store = require('../store');
 
 const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
 const URL = `${HOST}/api/v1/services/audio/asr/customization`;
+const { fetchWithTimeout } = require('../http');
 
 async function call(input) {
-  const res = await fetch(URL, {
+  const res = await fetchWithTimeout(URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,

@@ -3,7 +3,7 @@
 // 注意: file_urls 必须可公网访问。本地开发需配置 PUBLIC_BASE_URL（ngrok/cpolar 等），
 //       生产环境上传 OSS 后用 OSS URL。
 const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
-const BASE = `${HOST}/api/v1`;
+const { fetchWithTimeout } = require('../http');
 
 async function getVocabularyId(userId) {
   try {
@@ -15,7 +15,7 @@ async function getVocabularyId(userId) {
 }
 
 async function dsFetch(url, options = {}) {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     ...options,
     headers: {
       Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
@@ -77,7 +77,7 @@ module.exports = {
     }
 
     // 3. 拉取转写结果 JSON 并归一化
-    const detailRes = await fetch(item.transcription_url);
+    const detailRes = await fetchWithTimeout(item.transcription_url);
     if (!detailRes.ok) throw new Error(`拉取转写结果失败 (HTTP ${detailRes.status})`);
     const detail = await detailRes.json();
     const segments = [];
