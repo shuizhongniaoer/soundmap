@@ -26,6 +26,21 @@ const COLUMN_TO_FIELD = Object.fromEntries(
   Object.entries(FIELD_MAP).map(([js, db]) => [db, js])
 );
 
+const USER_FIELD_MAP = {
+  id: 'id', provider: 'provider', appId: 'app_id', openid: 'openid', unionid: 'unionid',
+  nickname: 'nickname', avatarUrl: 'avatar', country: 'country', province: 'province', city: 'city',
+  createdAt: 'created_at', updatedAt: 'updated_at',
+};
+const USER_COLUMN_TO_FIELD = Object.fromEntries(
+  Object.entries(USER_FIELD_MAP).map(([js, db]) => [db, js])
+);
+function userRowToUser(row) {
+  if (!row) return null;
+  const user = {};
+  for (const [dbCol, val] of Object.entries(row)) user[USER_COLUMN_TO_FIELD[dbCol] || dbCol] = val;
+  return user;
+}
+
 function rowToRec(row) {
   if (!row) return null;
   const rec = {};
@@ -160,54 +175,53 @@ module.exports = {
       const res = await getPool().query(
         `SELECT * FROM users WHERE provider = 'wechat' AND unionid = $1`, [unionid]
       );
-      if (res.rows[0]) return rowToRec(res.rows[0]);
+      if (res.rows[0]) return userRowToUser(res.rows[0]);
     }
     if (appId && openid) {
       const res = await getPool().query(
         `SELECT * FROM users WHERE provider = 'wechat' AND app_id = $1 AND openid = $2`, [appId, openid]
       );
-      if (res.rows[0]) return rowToRec(res.rows[0]);
+      if (res.rows[0]) return userRowToUser(res.rows[0]);
     }
     return null;
   },
 
   async upsertWechatUser(profile) {
-    // 先查是否已存在
     let user = await this.findWechatUser(profile);
     if (user) {
       const sets = [];
       const values = [];
       let idx = 1;
       for (const [jsField, val] of Object.entries(profile)) {
-        const col = FIELD_MAP[jsField];
-        if (!col) continue;
+        const col = USER_FIELD_MAP[jsField];
+        if (!col || ['id', 'createdAt', 'updatedAt'].includes(jsField)) continue;
         sets.push(`${col} = $${idx}`);
         values.push(val);
         idx++;
       }
-      sets.push(`updated_at = now()`);
+      sets.push('updated_at = now()');
       values.push(user.id);
       const res = await getPool().query(
         `UPDATE users SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`, values
       );
-      return rowToRec(res.rows[0]);
+      return userRowToUser(res.rows[0]);
     }
-    // 创建新用户
     const id = require('crypto').randomUUID();
     const now = new Date().toISOString();
     const cols = ['id', 'provider', 'created_at', 'updated_at'];
     const values = [id, 'wechat', now, now];
     for (const [jsField, val] of Object.entries(profile)) {
-      const col = FIELD_MAP[jsField];
-      if (!col) continue;
+      const col = USER_FIELD_MAP[jsField];
+      if (!col || ['id', 'createdAt', 'updatedAt'].includes(jsField)) continue;
       cols.push(col);
       values.push(val);
     }
     const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
     const res = await getPool().query(
-      `INSERT INTO users (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`, values
+      `INSERT INTO users (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+      values
     );
-    return rowToRec(res.rows[0]);
+    return userRowToUser(res.rows[0]);
   },
 
   async getOrCreateLocalUser() {
@@ -218,12 +232,12 @@ module.exports = {
       `INSERT INTO users (id, provider, nickname, created_at, updated_at)
        VALUES ('local', 'dev', '本地体验账号', $1, $1) RETURNING *`, [now]
     );
-    return rowToRec(res.rows[0]);
+    return userRowToUser(res.rows[0]);
   },
 
   async getUser(id) {
     const res = await getPool().query('SELECT * FROM users WHERE id = $1', [id]);
-    return rowToRec(res.rows[0]);
+    return userRowToUser(res.rows[0]);
   },
 
   async createSession(session) {

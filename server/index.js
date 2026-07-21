@@ -92,6 +92,12 @@ app.get('/download/:token', async (req, res) => {
       res.setHeader('Content-Disposition', `attachment; filename="sprouts.md"; filename*=UTF-8''${encodeURIComponent(name + '-发芽报告.md')}`);
       return res.send('\uFEFF' + buildSproutsMarkdown(rec));
     }
+    if (grant.format === 'mindmap') {
+      if (!rec.mindmap) return res.status(400).json({ error: '思维导图尚未生成' });
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="mindmap.md"; filename*=UTF-8''${encodeURIComponent(name + '-思维导图.md')}`);
+      return res.send('\uFEFF' + buildMindmapMarkdown(rec));
+    }
     res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="transcript.srt"; filename*=UTF-8''${encodeURIComponent(name + '.srt')}`);
     return res.send('\uFEFF' + buildSrt(rec));
@@ -213,7 +219,7 @@ const chunkBodyParser = express.raw({
 // 初始化上传会话
 app.post('/api/uploads', async (req, res) => {
   const { filename, size, mimeType, chunkSize } = req.body || {};
-  if (!filename || !size) {
+  if (!filename || size === undefined || size === null) {
     return res.status(400).json({ error: 'filename 和 size 必填' });
   }
   try {
@@ -232,7 +238,7 @@ app.post('/api/uploads', async (req, res) => {
 
 // 查询上传状态（断点续传用）
 app.get('/api/uploads/:uploadId', async (req, res) => {
-  const info = uploads.status(req.params.uploadId);
+  const info = uploads.status(req.params.uploadId, req.user.id);
   if (!info) return res.status(404).json({ error: '上传会话不存在或已过期' });
   res.json(info);
 });
@@ -245,24 +251,24 @@ app.post('/api/uploads/:uploadId/chunks/:index', chunkBodyParser, async (req, re
     return res.status(400).json({ error: '分片数据为空或 Content-Type 不是 application/octet-stream' });
   }
   try {
-    const result = uploads.saveChunk(uploadId, index, req.body);
+    const result = uploads.saveChunk(uploadId, index, req.body, req.user.id);
     res.json(result);
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(e.status || 400).json({ error: e.message });
   }
 });
 
 // 完成上传：合并分片 → 保存到对象存储 → 创建录音 → 入队
 app.post('/api/uploads/:uploadId/complete', async (req, res) => {
   const uploadId = req.params.uploadId;
-  const info = uploads.status(uploadId);
+  const info = uploads.status(uploadId, req.user.id);
   if (!info) return res.status(404).json({ error: '上传会话不存在或已过期' });
 
   const asrProvider = ['dashscope', 'xfyun', 'volcengine', 'local', 'mock'].includes(req.body?.asrProvider)
     ? req.body.asrProvider : null;
 
   try {
-    const rec = await uploads.complete(uploadId, async (mergedPath, mergedName, meta) => {
+    const rec = await uploads.complete(uploadId, req.user.id, async (mergedPath, mergedName, meta) => {
       const blobKey = mergedName;
       // S3 模式：上传到对象存储后删除本地合并文件
       if (!blobs.isLocal) {
@@ -295,16 +301,24 @@ app.post('/api/uploads/:uploadId/complete', async (req, res) => {
       await queue.enqueue(recording.id);
       return recording;
     });
-    res.status(201).json(rec);
+    const result = rec?.alreadyCompleted
+      ? await store.getForUser(rec.recordingId, req.user.id)
+      : rec;
+    if (!result) return res.status(404).json({ error: '录音不存在' });
+    res.status(rec?.alreadyCompleted ? 200 : 201).json(result);
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(e.status || 400).json({ error: e.message });
   }
 });
 
 // 中止/删除上传会话
 app.delete('/api/uploads/:uploadId', async (req, res) => {
-  uploads.deleteSession(req.params.uploadId);
-  res.json({ ok: true });
+  try {
+    uploads.deleteSession(req.params.uploadId, req.user.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(e.status || 404).json({ error: e.message });
+  }
 });
 
 // 同步状态：汇总录音各状态数量、存储用量、最近活动
@@ -413,8 +427,8 @@ app.get('/api/recordings/:id/audio', async (req, res) => {
 app.post('/api/recordings/:id/export-link', async (req, res) => {
   const rec = await store.getForUser(req.params.id, req.user.id);
   if (!rec) return res.status(404).json({ error: 'not found' });
-  const format = ['docx', 'txt', 'srt', 'sprouts', 'view'].includes(req.body?.format) ? req.body.format : null;
-  if (!format) return res.status(400).json({ error: 'format must be docx, txt, srt, sprouts or view' });
+  const format = ['docx', 'txt', 'srt', 'sprouts', 'mindmap', 'view'].includes(req.body?.format) ? req.body.format : null;
+  if (!format) return res.status(400).json({ error: 'format must be docx, txt, srt, sprouts, mindmap or view' });
   const token = createRawToken();
   await store.createDownloadToken({
     tokenHash: hashToken(token), recordingId: rec.id, userId: req.user.id, format,

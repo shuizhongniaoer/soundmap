@@ -9,21 +9,38 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 function load() {
   try {
-    const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    const raw = fs.readFileSync(DB_FILE, 'utf8');
+    const db = JSON.parse(raw);
     db.recordings = db.recordings || [];
     db.users = db.users || [];
     db.sessions = db.sessions || [];
     db.oauthStates = db.oauthStates || [];
     db.downloadTokens = db.downloadTokens || [];
+    db.meta = db.meta || {};
     return db;
-  } catch {
-    return { recordings: [], users: [], sessions: [], oauthStates: [], downloadTokens: [] };
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return { recordings: [], users: [], sessions: [], oauthStates: [], downloadTokens: [], meta: {} };
+    }
+    throw new Error(`JSON 数据库读取失败: ${error.message}`);
   }
 }
 
 function save(db) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  const temp = `${DB_FILE}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    const fd = fs.openSync(temp, 'w', 0o600);
+    try {
+      fs.writeFileSync(fd, JSON.stringify(db, null, 2));
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(temp, DB_FILE);
+  } finally {
+    try { fs.unlinkSync(temp); } catch { /* ignore */ }
+  }
 }
 
 module.exports = {

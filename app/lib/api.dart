@@ -168,7 +168,11 @@ class Api {
       void Function(int sent, int total)? onProgress}) async {
     final fileSize = await file.length();
     if (fileSize < chunkThreshold) {
-      return upload(file, title: title, originalName: originalName);
+      return upload(file,
+          title: title,
+          originalName: originalName,
+          folder: folder,
+          tags: tags);
     }
     return uploadChunked(file,
         title: title,
