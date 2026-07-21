@@ -70,3 +70,23 @@ test('认证限流使用独立环境变量', async () => {
     if (oldWindow === undefined) delete process.env.AUTH_RATE_LIMIT_WINDOW_MS; else process.env.AUTH_RATE_LIMIT_WINDOW_MS = oldWindow;
   }
 });
+
+
+test('认证限流默认上限为每分钟 20 次', () => {
+  const oldMax = process.env.AUTH_RATE_LIMIT_MAX;
+  delete process.env.AUTH_RATE_LIMIT_MAX;
+  const middleware = createRateLimit({ maxEnv: 'AUTH_RATE_LIMIT_MAX', defaultMaxRequests: 20 });
+  const headers = {};
+  const req = { ip: 'default-limit-test' };
+  const res = {
+    setHeader(name, value) { headers[name] = value; },
+    status() { return this; },
+    json() {},
+  };
+  let nextCount = 0;
+  for (let i = 0; i < 20; i++) middleware(req, res, () => { nextCount++; });
+  assert.equal(nextCount, 20);
+  assert.equal(headers['X-RateLimit-Limit'], '20');
+  if (oldMax === undefined) delete process.env.AUTH_RATE_LIMIT_MAX; else process.env.AUTH_RATE_LIMIT_MAX = oldMax;
+  clearRateLimitState();
+});

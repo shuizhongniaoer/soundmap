@@ -11,10 +11,15 @@ function clientKey(req) {
   return String(req.ip || req.socket?.remoteAddress || 'unknown').replace(/^::ffff:/, '');
 }
 
-function createRateLimit({ windowEnv = 'API_RATE_LIMIT_WINDOW_MS', maxEnv = 'API_RATE_LIMIT_MAX' } = {}) {
+function createRateLimit({
+  windowEnv = 'API_RATE_LIMIT_WINDOW_MS',
+  maxEnv = 'API_RATE_LIMIT_MAX',
+  defaultWindowMs = 60 * 1000,
+  defaultMaxRequests = 120,
+} = {}) {
   return function configuredRateLimit(req, res, next) {
-    const windowMs = Number(process.env[windowEnv] || 60 * 1000);
-    const maxRequests = Number(process.env[maxEnv] || 120);
+    const windowMs = Number(process.env[windowEnv] || defaultWindowMs);
+    const maxRequests = Number(process.env[maxEnv] || defaultMaxRequests);
     return applyRateLimit(req, res, next, windowMs, maxRequests);
   };
 }

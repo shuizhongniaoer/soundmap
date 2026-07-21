@@ -17,7 +17,11 @@ const { createRawToken, hashToken } = require('./auth/token');
 const { isSupportedAudioFile } = require('./audio');
 const { requestIdMiddleware, getRequestId } = require('./request-id');
 const { rateLimit, createRateLimit } = require('./rate-limit');
-const authRateLimit = createRateLimit({ windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS', maxEnv: 'AUTH_RATE_LIMIT_MAX' });
+const authRateLimit = createRateLimit({
+  windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS',
+  maxEnv: 'AUTH_RATE_LIMIT_MAX',
+  defaultMaxRequests: 20,
+});
 
 const app = express();
 
