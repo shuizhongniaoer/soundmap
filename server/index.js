@@ -17,6 +17,7 @@ const { createRawToken, hashToken } = require('./auth/token');
 const { isSupportedAudioFile } = require('./audio');
 const { requestIdMiddleware, getRequestId } = require('./request-id');
 const { rateLimit, createRateLimit } = require('./rate-limit');
+const { requestLogger, logError, write: writeLog } = require('./logger');
 const authRateLimit = createRateLimit({
   windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS',
   maxEnv: 'AUTH_RATE_LIMIT_MAX',
@@ -109,6 +110,7 @@ const upload = multer({
 });
 
 app.use(requestIdMiddleware);
+app.use(requestLogger);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'web'), {
   setHeaders: (res, filePath) => {
@@ -773,7 +775,7 @@ app.use((err, req, res, next) => {
     ? err.status : (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
   const requestId = getRequestId(req);
   res.setHeader('X-Request-Id', requestId);
-  console.error(`[request:${requestId}] ${req.method} ${req.originalUrl} ${status}:`, err.stack || err.message);
+  logError('http.error', err, { requestId, method: req.method, path: req.originalUrl, status });
   if (res.headersSent) return next(err);
   const message = status >= 500 ? '服务器内部错误，请稍后重试' : (err.message || '请求失败');
   res.status(status).json({ error: message, requestId });
@@ -781,11 +783,16 @@ app.use((err, req, res, next) => {
 
   const uploadCleanupTimer = uploads.startCleanup();
   const server = app.listen(PORT, () => {
-  console.log(`声图 SoundMap 已启动: http://localhost:${PORT}`);
-  console.log(`ASR provider: ${require('./asr').name} | LLM provider: ${require('./llm').name}`);
-  console.log(`存储: ${store.name} | 队列: ${queue.name} | 对象存储: ${blobs.name}`);
+  writeLog('log', 'server.started', {
+    url: `http://localhost:${PORT}`,
+    asrProvider: require('./asr').name,
+    llmProvider: require('./llm').name,
+    storage: store.name,
+    queue: queue.name,
+    blobStorage: blobs.name,
+  });
   if (blobs.isLocal && !blobs.hasPersistentSecret) {
-    console.warn('[security] 未设置 MEDIA_SIGNING_SECRET，当前使用进程级临时密钥；多实例/正式环境必须配置。');
+    writeLog('warn', 'security.media_signing_secret_missing', { message: '未设置 MEDIA_SIGNING_SECRET，当前使用进程级临时密钥；多实例/正式环境必须配置。' });
   }
 });
 
