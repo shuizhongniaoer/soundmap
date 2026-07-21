@@ -14,6 +14,7 @@ const { searchRecordings } = require('./search');
 const { parsePage } = require('./pagination');
 const auth = require('./auth');
 const { createRawToken, hashToken } = require('./auth/token');
+const { isSupportedAudioFile } = require('./audio');
 
 function contentTypeFor(name) {
   const ext = path.extname(name || '').toLowerCase();
@@ -230,6 +231,10 @@ app.delete('/api/recordings/:id/share', async (req, res) => {
 app.post('/api/recordings', upload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '缺少音频文件（字段名 audio）' });
   const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+  if (!(await isSupportedAudioFile(req.file.path))) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: '文件内容不是受支持的音频格式' });
+  }
   const asrProvider = ['dashscope', 'xfyun', 'volcengine', 'local', 'mock'].includes(req.body.asrProvider)
     ? req.body.asrProvider : null;
   // multer 生成的 filename 同时作为 blob key
@@ -360,6 +365,11 @@ app.post('/api/uploads/:uploadId/complete', async (req, res) => {
           blobSaved = true;
         }
         const originalName = meta.filename;
+        if (!(await isSupportedAudioFile(mergedPath))) {
+          const error = new Error('文件内容不是受支持的音频格式');
+          error.status = 400;
+          throw error;
+        }
         recording = await store.create({
           id: crypto.randomUUID(),
           title: (req.body?.title || '').trim() || null,
