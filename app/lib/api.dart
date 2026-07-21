@@ -349,8 +349,57 @@ class Api {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// 创建用户自定义总结模板。模板指令会在服务端按当前账号隔离并注入 Prompt。
+  static Future<Map<String, dynamic>> createTemplate({
+    required String name,
+    required String instruction,
+    String desc = '',
+  }) async {
+    final res = await http.post(
+      Uri.parse('${await base()}/api/templates'),
+      headers: await headers(json: true),
+      body: jsonEncode({'name': name, 'desc': desc, 'instruction': instruction}),
+    );
+    if (res.statusCode == 401) throw const AuthRequiredException();
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception(_json(res)['error'] ?? '创建模板失败');
+    }
+    return _json(res);
+  }
+
+  /// 修改用户自己的自定义总结模板。
+  static Future<Map<String, dynamic>> updateTemplate(
+      String id, {String? name, String? desc, String? instruction}) async {
+    final res = await http.patch(
+      Uri.parse('${await base()}/api/templates/$id'),
+      headers: await headers(json: true),
+      body: jsonEncode({
+        if (name != null) 'name': name,
+        if (desc != null) 'desc': desc,
+        if (instruction != null) 'instruction': instruction,
+      }),
+    );
+    if (res.statusCode == 401) throw const AuthRequiredException();
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception(_json(res)['error'] ?? '修改模板失败');
+    }
+    return _json(res);
+  }
+
+  /// 删除未被录音引用的用户自定义总结模板。
+  static Future<void> deleteTemplate(String id) async {
+    final res = await http.delete(
+      Uri.parse('${await base()}/api/templates/$id'),
+      headers: await headers(),
+    );
+    if (res.statusCode == 401) throw const AuthRequiredException();
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception(_json(res)['error'] ?? '删除模板失败');
+    }
+  }
+
   /// part 可选 summary / sprouts / mindmap / proofread / ai / all；full 才重新转写。
-  /// template 可选场景模板 id（auto/meeting/sales/lecture/interview/memo）。
+  /// template 可选内置或自定义场景模板 id（auto/meeting/sales/lecture/interview/memo/custom_*）。
   static Future<void> reprocess(String id,
       {String part = 'ai', bool full = false, String? template}) async {
     final uri = Uri.parse('${await base()}/api/recordings/$id/reprocess')

@@ -10,6 +10,7 @@ const llm = require('./llm');
 const { applyCorrections } = require('./llm/proofread');
 const { fetchWithTimeout } = require('./http');
 const { withDeadline } = require('./deadline');
+const customTemplates = require('./llm/custom-templates');
 
 let ffmpegOk = null;
 function hasFfmpeg() {
@@ -132,8 +133,14 @@ async function run(id, options = {}) {
       proofreadResult = await optimizeTranscript(rec, transcript);
       await store.update(id, { transcript, lastProofread: proofreadResult });
     }
+    const summaryTemplate = rec.summaryTemplate || options.summaryTemplate || 'auto';
+    let customTemplate = null;
+    if (requested.has('summary') && summaryTemplate.startsWith('custom_')) {
+      customTemplate = await customTemplates.get(rec.userId || 'local', summaryTemplate);
+      if (!customTemplate) throw new Error('自定义总结模板不存在或已删除');
+    }
     const summaryPromise = requested.has('summary')
-      ? llm.summarize(transcript.segments, rec.title, rec.summaryTemplate || options.summaryTemplate) : Promise.resolve(undefined);
+      ? llm.summarize(transcript.segments, rec.title, summaryTemplate, customTemplate) : Promise.resolve(undefined);
     const mindmapPromise = requested.has('mindmap')
       ? llm.mindmap(transcript.segments, rec.title) : Promise.resolve(undefined);
     const sproutsPromise = requested.has('sprouts')

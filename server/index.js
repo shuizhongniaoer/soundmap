@@ -558,7 +558,9 @@ app.post('/api/recordings/:id/reprocess', async (req, res) => {
   // 场景模板：验证并持久化到 recording，pipeline 生成总结时读取
   const { isValid: isValidTemplate } = require('./llm/templates');
   const templateParam = String(req.query.template || '').trim();
-  if (templateParam && !isValidTemplate(templateParam)) {
+  const customTemplate = templateParam.startsWith('custom_')
+    ? await customTemplates.get(req.user.id, templateParam) : null;
+  if (templateParam && !isValidTemplate(templateParam) && !customTemplate) {
     return res.status(400).json({ error: `无效的模板: ${templateParam}` });
   }
   const summaryTemplate = templateParam || null;
@@ -623,8 +625,43 @@ app.patch('/api/recordings/:id', async (req, res) => {
 });
 
 // ---- 场景模板 ----
-app.get('/api/templates', (req, res) => {
-  res.json(require('./llm/templates').TEMPLATES);
+const builtInTemplates = require('./llm/templates');
+const customTemplates = require('./llm/custom-templates');
+
+app.get('/api/templates', async (req, res) => {
+  res.json([...builtInTemplates.TEMPLATES, ...(await customTemplates.list(req.user.id))]);
+});
+
+app.post('/api/templates', async (req, res) => {
+  try {
+    const template = await customTemplates.create(req.user.id, req.body);
+    res.status(201).json(template);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/templates/:id', async (req, res) => {
+  if (!req.params.id.startsWith('custom_')) return res.status(400).json({ error: '只能修改自定义模板' });
+  try {
+    const template = await customTemplates.update(req.user.id, req.params.id, req.body);
+    if (!template) return res.status(404).json({ error: '模板不存在' });
+    res.json(template);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/templates/:id', async (req, res) => {
+  if (!req.params.id.startsWith('custom_')) return res.status(400).json({ error: '只能删除自定义模板' });
+  const template = await customTemplates.get(req.user.id, req.params.id);
+  if (!template) return res.status(404).json({ error: '模板不存在' });
+  const records = await store.listForUser(req.user.id);
+  if (records.some(record => record.summaryTemplate === req.params.id)) {
+    return res.status(409).json({ error: '该模板仍被录音使用，请先切换这些录音的模板' });
+  }
+  await customTemplates.remove(req.user.id, req.params.id);
+  res.json({ ok: true });
 });
 
 // ---- 热词表管理 ----

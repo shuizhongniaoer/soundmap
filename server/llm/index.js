@@ -38,8 +38,8 @@ function stripFence(s) {
 
 const dashscope = {
   name: 'dashscope',
-  async summarize(segments, title, templateId) {
-    const out = await chat(prompts.summaryMessages(segments, title, templateId), { json: true });
+  async summarize(segments, title, templateId, customTemplate) {
+    const out = await chat(prompts.summaryMessages(segments, title, templateId, customTemplate), { json: true });
     return JSON.parse(stripFence(out));
   },
   async mindmap(segments, title) {
@@ -135,7 +135,9 @@ function resolveProvider() {
 
 module.exports = {
   get name() { return resolveProvider().name; },
-  summarize(segments, title, templateId) { return resolveProvider().summarize(segments, title, templateId); },
+  summarize(segments, title, templateId, customTemplate) {
+    return resolveProvider().summarize(segments, title, templateId, customTemplate);
+  },
   mindmap(segments, title) { return resolveProvider().mindmap(segments, title); },
   sprouts(segments, title) { return resolveProvider().sprouts(segments, title); },
   proofread(segments, hotwords) { return resolveProvider().proofread(segments, hotwords); },

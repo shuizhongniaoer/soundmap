@@ -244,7 +244,10 @@ async function load() {
       const tplOptions = templates.map(t => `<option value="${t.id}"${t.id === curTpl ? ' selected' : ''}>${esc(t.name)}</option>`).join('');
       const tplLabel = templates.find(t => t.id === curTpl);
       document.getElementById('p-summary').innerHTML =
-        `<div class="tpl-sel"><label>总结模板</label><select onchange="switchTemplate(this.value)">${tplOptions}</select>${tplLabel ? `<small>${esc(tplLabel.desc)}</small>` : ''}</div>` +
+        `<div class="tpl-sel"><label>总结模板</label><select onchange="switchTemplate(this.value)">${tplOptions}</select>` +
+        `${tplLabel ? `<small>${esc(tplLabel.desc)}</small>` : ''}` +
+        `<span style="display:flex;gap:8px;margin-top:8px"><button class="re" onclick="createCustomTemplate()">新建自定义模板</button>` +
+        `${tplLabel && tplLabel.custom ? `<button class="re" onclick="editCustomTemplate('${tplLabel.id}')">编辑</button><button class="re" onclick="deleteCustomTemplate('${tplLabel.id}')">删除</button>` : ''}</span></div>` +
         (s.type ? `<span style="display:inline-block;background:#eef3f8;color:var(--accent);border-radius:20px;padding:3px 14px;font-size:12px;margin-bottom:6px">${esc(s.type)}</span>` : '') +
         `<h3>摘要</h3><div class="abstract">${esc(s.abstract || '')}</div>` +
         `<h3>关键要点</h3><ul>${(s.key_points || []).map(k => `<li>${esc(k)}</li>`).join('')}</ul>` +
@@ -589,6 +592,54 @@ async function switchTemplate(tplId) {
     alert('切换模板失败: ' + error.message);
     scheduleLoad(0);
   }
+}
+
+async function createCustomTemplate() {
+  const name = prompt('模板名称（最多40字）：');
+  if (name === null) return;
+  const instruction = prompt('模板指令（告诉 AI 重点关注什么，最多4000字）：');
+  if (instruction === null) return;
+  const desc = prompt('模板描述（可选，最多120字）：', '自定义总结重点');
+  if (desc === null) return;
+  try {
+    const res = await fetch('/api/templates', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, desc, instruction }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+    await loadTemplates();
+    load();
+  } catch (error) { alert('创建模板失败：' + error.message); }
+}
+
+async function editCustomTemplate(templateId) {
+  const tpl = templates.find(item => item.id === templateId);
+  if (!tpl) return;
+  const name = prompt('模板名称：', tpl.name);
+  if (name === null) return;
+  const instruction = prompt('模板指令：', tpl.instruction);
+  if (instruction === null) return;
+  const desc = prompt('模板描述：', tpl.desc || '');
+  if (desc === null) return;
+  try {
+    const res = await fetch('/api/templates/' + encodeURIComponent(templateId), {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, desc, instruction }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+    await loadTemplates();
+    load();
+  } catch (error) { alert('修改模板失败：' + error.message); }
+}
+
+async function deleteCustomTemplate(templateId) {
+  if (!confirm('确定删除这个自定义模板吗？')) return;
+  try {
+    const res = await fetch('/api/templates/' + encodeURIComponent(templateId), { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+    await loadTemplates();
+    load();
+  } catch (error) { alert('删除模板失败：' + error.message); }
 }
 
 async function loadTemplates() {

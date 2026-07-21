@@ -8,8 +8,9 @@ function transcriptText(segments) {
   return segments.map(s => `${s.speaker}: ${s.text}`).join('\n');
 }
 
-exports.summaryMessages = (segments, title, templateId) => {
-  const tpl = templateId && templateId !== 'auto' ? getTemplate(templateId) : null;
+exports.summaryMessages = (segments, title, templateId, customTemplate = null) => {
+  // 自定义模板由调用方按用户身份读取后传入；这里不直接访问存储，避免 Prompt 层绕过账号隔离。
+  const tpl = customTemplate || (templateId && templateId !== 'auto' ? getTemplate(templateId) : null);
   const autoRule = `1. abstract 的语气必须匹配类型：生活对话/闲聊用自然温暖的语言记录场景、人物和氛围，严禁使用"参会人员""强调了""会议开始前"这类公文腔；只有真正的会议/工作内容才用纪要腔。
 2. key_points 对生活对话来说是"有趣的瞬间、重要的信息、值得回忆的细节"，不是"决议事项"。`;
 
