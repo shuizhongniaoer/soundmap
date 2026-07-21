@@ -718,7 +718,8 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: message, requestId });
 });
 
-app.listen(PORT, () => {
+  const uploadCleanupTimer = uploads.startCleanup();
+  const server = app.listen(PORT, () => {
   console.log(`声图 SoundMap 已启动: http://localhost:${PORT}`);
   console.log(`ASR provider: ${require('./asr').name} | LLM provider: ${require('./llm').name}`);
   console.log(`存储: ${store.name} | 队列: ${queue.name} | 对象存储: ${blobs.name}`);
@@ -726,3 +727,13 @@ app.listen(PORT, () => {
     console.warn('[security] 未设置 MEDIA_SIGNING_SECRET，当前使用进程级临时密钥；多实例/正式环境必须配置。');
   }
 });
+
+async function shutdown(signal) {
+  console.log(`[server] 收到 ${signal}，正在关闭...`);
+  clearInterval(uploadCleanupTimer);
+  await queue.close();
+  await store.close();
+  server.close(() => process.exit(0));
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

@@ -19,6 +19,10 @@ fs.mkdirSync(CHUNK_DIR, { recursive: true });
 const DEFAULT_CHUNK_SIZE = 2 * 1024 * 1024;
 // 会话过期时间：24 小时
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+// completed meta 只为重复 complete 提供短期幂等窗口，超过后即可回收。
+const COMPLETED_RETENTION_MS = Number(process.env.SOUNDMAP_COMPLETED_UPLOAD_RETENTION_MS || SESSION_TTL_MS);
+// API 进程定期扫描临时目录，避免异常退出留下分片和合并文件。
+const CLEANUP_INTERVAL_MS = Number(process.env.SOUNDMAP_UPLOAD_CLEANUP_INTERVAL_MS || 15 * 60 * 1000);
 // 允许的文件扩展名（与 multer fileFilter 保持一致）
 const ALLOWED_EXT = /\.(mp3|m4a|wav|aac|ogg|opus|flac|mp4|webm|amr|3gp)$/i;
 
@@ -106,19 +110,29 @@ function cleanExpired() {
     const entries = fs.readdirSync(CHUNK_DIR, { withFileTypes: true });
     const now = Date.now();
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      const fullPath = path.join(CHUNK_DIR, entry.name);
+      if (!entry.isDirectory()) {
+        // 合并文件名由服务端生成；清理异常退出后遗留的临时合并文件。
+        if (/^\d+-[a-z0-9-]+\.[a-z0-9]+$/i.test(entry.name)) {
+          try {
+            const stat = fs.statSync(fullPath);
+            if (now - stat.mtimeMs > SESSION_TTL_MS) fs.unlinkSync(fullPath);
+          } catch { /* ignore */ }
+        }
+        continue;
+      }
       const meta = readMeta(entry.name);
       if (!meta) {
-        // 无 meta 的目录，检查目录修改时间
+        // 无 meta 的目录，检查目录修改时间。
         try {
-          const stat = fs.statSync(path.join(CHUNK_DIR, entry.name));
-          if (now - stat.mtimeMs > SESSION_TTL_MS) deleteSession(entry.name);
+          const stat = fs.statSync(fullPath);
+          if (now - stat.mtimeMs > SESSION_TTL_MS) fs.rmSync(fullPath, { recursive: true, force: true });
         } catch { /* ignore */ }
         continue;
       }
-      if (now - meta.createdAt > SESSION_TTL_MS) {
-        deleteSession(entry.name);
-      }
+      const age = now - Number(meta.updatedAt || meta.createdAt || 0);
+      const retention = meta.status === 'completed' ? COMPLETED_RETENTION_MS : SESSION_TTL_MS;
+      if (age > retention) fs.rmSync(fullPath, { recursive: true, force: true });
     }
   } catch { /* ignore */ }
 }
@@ -312,12 +326,25 @@ function findMissing(received, total) {
   return missing;
 }
 
+const cleanupTimer = CLEANUP_INTERVAL_MS > 0
+  ? setInterval(cleanExpired, CLEANUP_INTERVAL_MS)
+  : null;
+if (cleanupTimer?.unref) cleanupTimer.unref();
+
 module.exports = {
   DEFAULT_CHUNK_SIZE,
+  SESSION_TTL_MS,
+  COMPLETED_RETENTION_MS,
   init,
   status,
   saveChunk,
   complete,
   deleteSession,
   cleanExpired,
+  // 由 API/Worker 生命周期调用，返回可停止的定时器，测试和优雅关闭时可释放。
+  startCleanup() {
+    const timer = setInterval(cleanExpired, CLEANUP_INTERVAL_MS);
+    timer.unref?.();
+    return timer;
+  },
 };
