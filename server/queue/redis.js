@@ -71,6 +71,10 @@ module.exports = {
     }, {
       connection: connection(),
       concurrency: Number(process.env.QUEUE_CONCURRENCY || 2),
+      // 任务超时由 pipeline 控制；这里让 BullMQ 在 Worker 中断后尽快回收锁并重派任务。
+      lockDuration: Number(process.env.QUEUE_LOCK_DURATION_MS || 35 * 60 * 1000),
+      stalledInterval: Number(process.env.QUEUE_STALLED_INTERVAL_MS || 30_000),
+      maxStalledCount: Number(process.env.QUEUE_MAX_STALLED_COUNT || 1),
     });
     _worker.on('failed', (job, err) => {
       console.error(`[queue:redis] ${job?.data?.recordingId} 失败:`, err.message);

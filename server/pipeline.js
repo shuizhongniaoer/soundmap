@@ -9,6 +9,7 @@ const asr = require('./asr');
 const llm = require('./llm');
 const { applyCorrections } = require('./llm/proofread');
 const { fetchWithTimeout } = require('./http');
+const { withDeadline } = require('./deadline');
 
 let ffmpegOk = null;
 function hasFfmpeg() {
@@ -97,6 +98,8 @@ async function optimizeTranscript(rec, transcript) {
 async function run(id, options = {}) {
   const rec = await store.get(id);
   if (!rec) return;
+  const taskTimeoutMs = Number(options.timeoutMs || process.env.QUEUE_TASK_TIMEOUT_MS || 30 * 60 * 1000);
+  const deadlineAt = Number.isFinite(taskTimeoutMs) && taskTimeoutMs > 0 ? Date.now() + taskTimeoutMs : null;
   const requested = new Set(Array.isArray(options.parts)
     ? options.parts
     : ['proofread', 'summary', 'mindmap', 'sprouts']);
@@ -110,7 +113,11 @@ async function run(id, options = {}) {
       preprocessCleanup = cleanup;
       const fileUrl = await asrFileUrl(asrKey);
       const provider = asr.resolve(rec.asrProvider);
-      transcript = await provider.transcribe({ fileUrl, filename: asrKey, userId: rec.userId || 'local' });
+      transcript = await withDeadline(
+        provider.transcribe({ fileUrl, filename: asrKey, userId: rec.userId || 'local' }),
+        deadlineAt,
+        `录音处理超时（>${taskTimeoutMs}ms）`,
+      );
 
       const segs = transcript.segments || [];
       const duration = segs.length ? Math.ceil(segs[segs.length - 1].end || 0) : null;
@@ -134,9 +141,11 @@ async function run(id, options = {}) {
         console.warn(`[pipeline] ${id} 灵感发芽跳过:`, error.message);
         return { items: [], error: error.message };
       }) : Promise.resolve(undefined);
-    const [summary, mindmap, sprouts] = await Promise.all([
-      summaryPromise, mindmapPromise, sproutsPromise,
-    ]);
+    const [summary, mindmap, sprouts] = await withDeadline(Promise.all([
+      summaryPromise,
+      mindmapPromise,
+      sproutsPromise,
+    ]), deadlineAt, `录音处理超时（>${taskTimeoutMs}ms）`);
 
     const cur = await store.get(id) || {};
     const patch = {
