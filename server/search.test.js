@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { searchRecordings, trimSnippet } = require('./search');
+const { parsePage } = require('./pagination');
 
 const rows = [
   {
@@ -23,6 +24,11 @@ test('searches title, transcript, speaker and summary text', () => {
 test('returns a transcript snippet and preserves all rows for an empty query', () => {
   assert.equal(searchRecordings(rows, '新版本')[0].match, '张总：下周发布新版本');
   assert.equal(searchRecordings(rows, ' ').length, 2);
+});
+
+test('supports bounded offset pagination', () => {
+  assert.deepEqual(parsePage({ limit: '2', offset: '1' }), { hasPaging: true, limit: 2, offset: 1 });
+  assert.deepEqual(parsePage({ limit: '999' }), { hasPaging: true, limit: 100, offset: 0 });
 });
 
 test('limits long snippets while keeping the matching text', () => {

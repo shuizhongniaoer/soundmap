@@ -11,6 +11,7 @@ const blobs = require('./blobs');
 const uploads = require('./uploads');
 const { buildDocx, buildTxt, buildSrt, buildSproutsMarkdown, buildMindmapMarkdown } = require('./export');
 const { searchRecordings } = require('./search');
+const { parsePage } = require('./pagination');
 const auth = require('./auth');
 const { createRawToken, hashToken } = require('./auth/token');
 
@@ -462,10 +463,13 @@ app.get('/api/recordings', async (req, res) => {
     filtered = filtered.filter(r => (r.tags || []).includes(tagFilter));
   }
   const results = searchRecordings(filtered, req.query.q);
-  res.json(results.map(({ rec, match }) => {
+  const page = parsePage(req.query);
+  const items = results.slice(page.offset, page.offset + page.limit).map(({ rec, match }) => {
     const { transcript, summary, mindmap, sprouts, ...meta } = rec;
     return { ...meta, ...(match ? { match } : {}) };
-  }));
+  });
+  if (!page.hasPaging) return res.json(items);
+  res.json({ items, total: results.length, offset: page.offset, limit: page.limit, hasMore: page.offset + items.length < results.length });
 });
 
 // 列出当前用户所有文件夹及录音数量
