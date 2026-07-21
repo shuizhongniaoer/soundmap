@@ -26,5 +26,5 @@ module.exports = {
   // 内存模式下 start 是空操作（pipeline 在 enqueue 时已直接执行）
   async start() { /* no-op */ },
   async close() { /* no-op */ },
-  get stats() { return { pending: 0, active: pending.size }; },
+  get stats() { return { pending: pending.size, active: pending.size }; },
 };
