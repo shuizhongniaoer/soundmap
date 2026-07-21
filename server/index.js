@@ -16,7 +16,8 @@ const auth = require('./auth');
 const { createRawToken, hashToken } = require('./auth/token');
 const { isSupportedAudioFile } = require('./audio');
 const { requestIdMiddleware, getRequestId } = require('./request-id');
-const { rateLimit } = require('./rate-limit');
+const { rateLimit, createRateLimit } = require('./rate-limit');
+const authRateLimit = createRateLimit({ windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS', maxEnv: 'AUTH_RATE_LIMIT_MAX' });
 
 const app = express();
 
@@ -110,7 +111,7 @@ app.use(express.static(path.join(__dirname, '..', 'web'), {
     if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
   },
 }));
-app.use('/api/auth', auth.router);
+app.use('/api/auth', authRateLimit, auth.router);
 
 // ASR 供应商临时拉取音频：短期 HMAC 签名（仅本地存储模式需要；S3 模式直接用预签名 URL）
 app.get('/asr-media/:filename', (req, res) => {

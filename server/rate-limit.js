@@ -11,8 +11,15 @@ function clientKey(req) {
   return String(req.ip || req.socket?.remoteAddress || 'unknown').replace(/^::ffff:/, '');
 }
 
-function rateLimit(req, res, next) {
-  const { windowMs, maxRequests } = config();
+function createRateLimit({ windowEnv = 'API_RATE_LIMIT_WINDOW_MS', maxEnv = 'API_RATE_LIMIT_MAX' } = {}) {
+  return function configuredRateLimit(req, res, next) {
+    const windowMs = Number(process.env[windowEnv] || 60 * 1000);
+    const maxRequests = Number(process.env[maxEnv] || 120);
+    return applyRateLimit(req, res, next, windowMs, maxRequests);
+  };
+}
+
+function applyRateLimit(req, res, next, windowMs, maxRequests) {
   if (!Number.isFinite(windowMs) || windowMs <= 0 || !Number.isFinite(maxRequests) || maxRequests <= 0) return next();
   const now = Date.now();
   const key = clientKey(req);
@@ -34,8 +41,10 @@ function rateLimit(req, res, next) {
   return next();
 }
 
+const rateLimit = createRateLimit();
+
 function clearRateLimitState() {
   buckets.clear();
 }
 
-module.exports = { rateLimit, clearRateLimitState };
+module.exports = { rateLimit, createRateLimit, clearRateLimitState };

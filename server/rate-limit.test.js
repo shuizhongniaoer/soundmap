@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 const http = require('node:http');
-const { rateLimit, clearRateLimitState } = require('./rate-limit');
+const { rateLimit, createRateLimit, clearRateLimitState } = require('./rate-limit');
 
 test('API 限流返回 429 和 Retry-After，并按客户端隔离', async () => {
   const oldMax = process.env.API_RATE_LIMIT_MAX;
@@ -37,5 +37,36 @@ test('API 限流返回 429 和 Retry-After，并按客户端隔离', async () =>
     clearRateLimitState();
     if (oldMax === undefined) delete process.env.API_RATE_LIMIT_MAX; else process.env.API_RATE_LIMIT_MAX = oldMax;
     if (oldWindow === undefined) delete process.env.API_RATE_LIMIT_WINDOW_MS; else process.env.API_RATE_LIMIT_WINDOW_MS = oldWindow;
+  }
+});
+
+
+test('认证限流使用独立环境变量', async () => {
+  const oldMax = process.env.AUTH_RATE_LIMIT_MAX;
+  const oldWindow = process.env.AUTH_RATE_LIMIT_WINDOW_MS;
+  process.env.AUTH_RATE_LIMIT_MAX = '1';
+  process.env.AUTH_RATE_LIMIT_WINDOW_MS = '60000';
+  clearRateLimitState();
+  const app = express();
+  app.use(createRateLimit({ windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS', maxEnv: 'AUTH_RATE_LIMIT_MAX' }));
+  app.get('/', (req, res) => res.json({ ok: true }));
+  const server = await new Promise(resolve => {
+    const value = app.listen(0, '127.0.0.1', () => resolve(value));
+  });
+  const call = () => new Promise((resolve, reject) => {
+    const req = http.get({ host: '127.0.0.1', port: server.address().port, path: '/' }, response => {
+      response.resume();
+      response.on('end', () => resolve(response.statusCode));
+    });
+    req.on('error', reject);
+  });
+  try {
+    assert.equal(await call(), 200);
+    assert.equal(await call(), 429);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    clearRateLimitState();
+    if (oldMax === undefined) delete process.env.AUTH_RATE_LIMIT_MAX; else process.env.AUTH_RATE_LIMIT_MAX = oldMax;
+    if (oldWindow === undefined) delete process.env.AUTH_RATE_LIMIT_WINDOW_MS; else process.env.AUTH_RATE_LIMIT_WINDOW_MS = oldWindow;
   }
 });
