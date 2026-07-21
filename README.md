@@ -34,6 +34,14 @@ npm start              # http://localhost:3000
 
 mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、总结、灵感发芽和思维导图（假数据，用于验证流程和开发前端）。
 
+## 生产配置要点
+
+- 正式环境必须设置 `NODE_ENV=production`、`AUTH_REQUIRED=1`、`AUTH_DEV_LOGIN=0`、`DATABASE_URL` 和 `REDIS_URL`；生产模式会拒绝 JSON 文件存储和内存队列，避免意外降级。
+- 上传接口保留扩展名白名单，并校验 WAV/MP3/M4A/FLAC/OGG 等容器签名；不依赖文件名判断真实格式。API 默认按客户端 IP 每分钟最多 120 次请求，超限返回 `429`，可用 `API_RATE_LIMIT_MAX` 与 `API_RATE_LIMIT_WINDOW_MS` 调整。
+- 每个响应都带 `X-Request-Id`。客户端可透传安全格式的 ID，服务端日志会使用同一 ID 关联请求；多实例部署应在网关保留该请求头。
+- 处理任务默认总时限 30 分钟，队列重试和停滞任务恢复参数可通过 `QUEUE_TASK_TIMEOUT_MS`、`QUEUE_LOCK_DURATION_MS`、`QUEUE_STALLED_INTERVAL_MS`、`QUEUE_MAX_STALLED_COUNT` 调整。
+- `S3_*`、`MEDIA_SIGNING_SECRET`、微信和 ASR/LLM 密钥属于敏感配置，不要提交到仓库；国内数据与海外数据应使用隔离的数据库、对象存储和队列实例。
+
 ## 微信登录 / 注册
 
 微信首次授权会自动创建声图账号，后续授权登录同一账号。客户端只获取一次性 `code`，`WECHAT_APP_SECRET`、微信 `access_token` 与声图会话均由服务端处理；业务会话是 30 天有效的随机令牌，数据库只保存其 SHA-256 摘要。录音、转写稿、热词和导出接口均按账号隔离，ASR 拉取音频改用 15 分钟有效的签名地址。
