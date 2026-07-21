@@ -15,6 +15,9 @@ const { parsePage } = require('./pagination');
 const auth = require('./auth');
 const { createRawToken, hashToken } = require('./auth/token');
 const { isSupportedAudioFile } = require('./audio');
+const { requestIdMiddleware, getRequestId } = require('./request-id');
+
+const app = express();
 
 function contentTypeFor(name) {
   const ext = path.extname(name || '').toLowerCase();
@@ -99,6 +102,7 @@ const upload = multer({
   },
 });
 
+app.use(requestIdMiddleware);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'web'), {
   setHeaders: (res, filePath) => {
@@ -761,7 +765,7 @@ app.get('/api/recordings/:id/export/mindmap.md', async (req, res) => {
 app.use((err, req, res, next) => {
   const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 500
     ? err.status : (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
-  const requestId = req.get('x-request-id') || crypto.randomUUID();
+  const requestId = getRequestId(req);
   res.setHeader('X-Request-Id', requestId);
   console.error(`[request:${requestId}] ${req.method} ${req.originalUrl} ${status}:`, err.stack || err.message);
   if (res.headersSent) return next(err);
