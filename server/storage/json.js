@@ -6,6 +6,36 @@ const path = require('path');
 
 const DATA_DIR = process.env.SOUNDMAP_DATA_DIR || path.join(__dirname, '..', '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
+const LOCK_FILE = `${DB_FILE}.lock`;
+const LOCK_TTL_MS = Number(process.env.SOUNDMAP_JSON_LOCK_TTL_MS || 30_000);
+const LOCK_WAIT_MS = Number(process.env.SOUNDMAP_JSON_LOCK_WAIT_MS || 50);
+const lockWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+
+function withWriteLock(fn) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const started = Date.now();
+  let fd;
+  while (!fd) {
+    try {
+      fd = fs.openSync(LOCK_FILE, 'wx', 0o600);
+      fs.writeFileSync(fd, `${process.pid}\n${Date.now()}\n`);
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      try {
+        const stat = fs.statSync(LOCK_FILE);
+        if (Date.now() - stat.mtimeMs > LOCK_TTL_MS) fs.unlinkSync(LOCK_FILE);
+      } catch { /* lock disappeared or is stale */ }
+      if (Date.now() - started >= LOCK_TTL_MS) throw new Error('JSON 存储写锁超时');
+      Atomics.wait(lockWaitBuffer, 0, 0, LOCK_WAIT_MS);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    try { fs.closeSync(fd); } catch { /* ignore */ }
+    try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
+  }
+}
 
 function load() {
   try {
@@ -65,19 +95,23 @@ module.exports = {
   },
 
   create(rec) {
-    const db = load();
-    db.recordings.push(rec);
-    save(db);
-    return rec;
+    return withWriteLock(() => {
+      const db = load();
+      db.recordings.push(rec);
+      save(db);
+      return rec;
+    });
   },
 
   update(id, patch) {
-    const db = load();
-    const rec = db.recordings.find(r => r.id === id);
-    if (!rec) return null;
-    Object.assign(rec, patch, { updatedAt: new Date().toISOString() });
-    save(db);
-    return rec;
+    return withWriteLock(() => {
+      const db = load();
+      const rec = db.recordings.find(r => r.id === id);
+      if (!rec) return null;
+      Object.assign(rec, patch, { updatedAt: new Date().toISOString() });
+      save(db);
+      return rec;
+    });
   },
 
   getMeta(key) {
@@ -85,10 +119,12 @@ module.exports = {
   },
 
   setMeta(key, val) {
-    const db = load();
-    db.meta = db.meta || {};
-    db.meta[key] = val;
-    save(db);
+    return withWriteLock(() => {
+      const db = load();
+      db.meta = db.meta || {};
+      db.meta[key] = val;
+      save(db);
+    });
   },
 
   findWechatUser({ appId, openid, unionid }) {
@@ -99,32 +135,36 @@ module.exports = {
   },
 
   upsertWechatUser(profile) {
-    const db = load();
-    const now = new Date().toISOString();
-    let user = db.users.find(u =>
-      u.provider === 'wechat' &&
-      ((profile.unionid && u.unionid === profile.unionid) ||
-        (u.appId === profile.appId && u.openid === profile.openid))
-    );
-    if (!user) {
-      user = { id: require('crypto').randomUUID(), provider: 'wechat', createdAt: now };
-      db.users.push(user);
-    }
-    Object.assign(user, profile, { updatedAt: now });
-    save(db);
-    return user;
+    return withWriteLock(() => {
+      const db = load();
+      const now = new Date().toISOString();
+      let user = db.users.find(u =>
+        u.provider === 'wechat' &&
+        ((profile.unionid && u.unionid === profile.unionid) ||
+          (u.appId === profile.appId && u.openid === profile.openid))
+      );
+      if (!user) {
+        user = { id: require('crypto').randomUUID(), provider: 'wechat', createdAt: now };
+        db.users.push(user);
+      }
+      Object.assign(user, profile, { updatedAt: now });
+      save(db);
+      return user;
+    });
   },
 
   getOrCreateLocalUser() {
-    const db = load();
-    let user = db.users.find(u => u.id === 'local');
-    if (!user) {
-      const now = new Date().toISOString();
-      user = { id: 'local', provider: 'dev', nickname: '本地体验账号', createdAt: now, updatedAt: now };
-      db.users.push(user);
-      save(db);
-    }
-    return user;
+    return withWriteLock(() => {
+      const db = load();
+      let user = db.users.find(u => u.id === 'local');
+      if (!user) {
+        const now = new Date().toISOString();
+        user = { id: 'local', provider: 'dev', nickname: '本地体验账号', createdAt: now, updatedAt: now };
+        db.users.push(user);
+        save(db);
+      }
+      return user;
+    });
   },
 
   getUser(id) {
@@ -132,11 +172,13 @@ module.exports = {
   },
 
   createSession(session) {
-    const db = load();
-    db.sessions = db.sessions.filter(s => new Date(s.expiresAt).getTime() > Date.now());
-    db.sessions.push(session);
-    save(db);
-    return session;
+    return withWriteLock(() => {
+      const db = load();
+      db.sessions = db.sessions.filter(s => new Date(s.expiresAt).getTime() > Date.now());
+      db.sessions.push(session);
+      save(db);
+      return session;
+    });
   },
 
   findSession(tokenHash) {
@@ -144,46 +186,56 @@ module.exports = {
   },
 
   deleteSession(tokenHash) {
-    const db = load();
-    const before = db.sessions.length;
-    db.sessions = db.sessions.filter(s => s.tokenHash !== tokenHash);
-    if (db.sessions.length !== before) save(db);
+    return withWriteLock(() => {
+      const db = load();
+      const before = db.sessions.length;
+      db.sessions = db.sessions.filter(s => s.tokenHash !== tokenHash);
+      if (db.sessions.length !== before) save(db);
+    });
   },
 
   createOauthState(state) {
-    const db = load();
-    db.oauthStates = db.oauthStates.filter(s => new Date(s.expiresAt).getTime() > Date.now());
-    db.oauthStates.push(state);
-    save(db);
+    return withWriteLock(() => {
+      const db = load();
+      db.oauthStates = db.oauthStates.filter(s => new Date(s.expiresAt).getTime() > Date.now());
+      db.oauthStates.push(state);
+      save(db);
+    });
   },
 
   consumeOauthState(stateHash) {
-    const db = load();
-    const index = db.oauthStates.findIndex(s =>
-      s.stateHash === stateHash && new Date(s.expiresAt).getTime() > Date.now()
-    );
-    if (index < 0) return false;
-    db.oauthStates.splice(index, 1);
-    save(db);
-    return true;
+    return withWriteLock(() => {
+      const db = load();
+      const index = db.oauthStates.findIndex(s =>
+        s.stateHash === stateHash && new Date(s.expiresAt).getTime() > Date.now()
+      );
+      if (index < 0) return false;
+      db.oauthStates.splice(index, 1);
+      save(db);
+      return true;
+    });
   },
 
   createDownloadToken(grant) {
-    const db = load();
-    db.downloadTokens = db.downloadTokens.filter(t => new Date(t.expiresAt).getTime() > Date.now());
-    db.downloadTokens.push(grant);
-    save(db);
+    return withWriteLock(() => {
+      const db = load();
+      db.downloadTokens = db.downloadTokens.filter(t => new Date(t.expiresAt).getTime() > Date.now());
+      db.downloadTokens.push(grant);
+      save(db);
+    });
   },
 
   consumeDownloadToken(tokenHash) {
-    const db = load();
-    const index = db.downloadTokens.findIndex(t =>
-      t.tokenHash === tokenHash && new Date(t.expiresAt).getTime() > Date.now()
-    );
-    if (index < 0) return null;
-    const [grant] = db.downloadTokens.splice(index, 1);
-    save(db);
-    return grant;
+    return withWriteLock(() => {
+      const db = load();
+      const index = db.downloadTokens.findIndex(t =>
+        t.tokenHash === tokenHash && new Date(t.expiresAt).getTime() > Date.now()
+      );
+      if (index < 0) return null;
+      const [grant] = db.downloadTokens.splice(index, 1);
+      save(db);
+      return grant;
+    });
   },
 
   async close() { /* no-op */ },
