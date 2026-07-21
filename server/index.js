@@ -16,6 +16,7 @@ const auth = require('./auth');
 const { createRawToken, hashToken } = require('./auth/token');
 const { isSupportedAudioFile } = require('./audio');
 const { requestIdMiddleware, getRequestId } = require('./request-id');
+const { rateLimit } = require('./rate-limit');
 
 const app = express();
 
@@ -207,7 +208,7 @@ app.get('/share/:token', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'web', 'share.html'));
 });
 
-app.use('/api', auth.authenticate);
+app.use('/api', rateLimit, auth.authenticate);
 
 // ---- 分享管理（录音所有者）----
 app.get('/api/recordings/:id/share', async (req, res) => {
