@@ -174,9 +174,10 @@ const share = require('./share');
 // 分享数据：密码通过 X-Share-Password 头或 ?password= 传递
 app.get('/api/share/:token', async (req, res) => {
   const { share: s, error } = await share.resolve(
-    req.params.token, req.get('x-share-password') || req.query.password);
+    req.params.token, req.get('x-share-password') || req.query.password, req.ip);
   if (error) {
-    const msg = { 401: '需要密码', 403: '密码错误', 410: '分享已过期', 404: '分享不存在或已撤销' };
+    const msg = { 401: '需要密码', 403: '密码错误', 410: '分享已过期', 429: '尝试次数过多，请稍后再试', 404: '分享不存在或已撤销' };
+    if (error === 429) res.setHeader('Retry-After', '600');
     return res.status(error).json({ error: msg[error], code: error });
   }
   const rec = await store.get(s.recordingId);

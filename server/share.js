@@ -6,6 +6,34 @@ const store = require('./store');
 const hash = v => crypto.createHash('sha256').update(String(v)).digest('base64url');
 const recKey = id => `share:rec:${id}`;
 const tokKey = t => `share:tok:${hash(t)}`;
+const SHARE_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
+const SHARE_MAX_FAILED_ATTEMPTS = 5;
+const failedAttempts = new Map();
+
+function attemptKey(token, clientKey) {
+  return `${hash(token)}:${String(clientKey || 'unknown')}`;
+}
+
+function rateLimitState(token, clientKey) {
+  const key = attemptKey(token, clientKey);
+  const now = Date.now();
+  const state = failedAttempts.get(key);
+  if (!state || now - state.startedAt >= SHARE_ATTEMPT_WINDOW_MS) {
+    return { key, count: 0, startedAt: now };
+  }
+  return state;
+}
+
+function recordFailedAttempt(token, clientKey) {
+  const state = rateLimitState(token, clientKey);
+  state.count++;
+  failedAttempts.set(state.key, state);
+  return state.count >= SHARE_MAX_FAILED_ATTEMPTS;
+}
+
+function clearFailedAttempts(token, clientKey) {
+  failedAttempts.delete(attemptKey(token, clientKey));
+}
 
 // 分享密码采用随机盐 scrypt；存储格式为 scrypt$盐$派生密钥，避免弱密码被直接批量离线比对。
 function passwordHash(password) {
@@ -72,13 +100,19 @@ async function revoke(recordingId) {
 }
 
 // 访客解析：返回 { share } 或 { error: 401|403|404|410 }
-async function resolve(token, password) {
+async function resolve(token, password, clientKey) {
   const share = await store.getMeta(tokKey(token));
   if (!share) return { error: 404 };
   if (share.expiresAt && Date.parse(share.expiresAt) < Date.now()) return { error: 410 };
-  if (share.passwordHash && !verifyPassword(password, share.passwordHash)) {
+  if (share.passwordHash) {
+    const state = rateLimitState(token, clientKey);
+    if (state.count >= SHARE_MAX_FAILED_ATTEMPTS) return { error: 429 };
     if (!password) return { error: 401 };
-    return { error: 403 };
+    if (!verifyPassword(password, share.passwordHash)) {
+      const locked = recordFailedAttempt(token, clientKey);
+      return { error: locked ? 429 : 403 };
+    }
+    clearFailedAttempts(token, clientKey);
   }
   return { share };
 }
