@@ -164,7 +164,7 @@ app.get('/open/:token', async (req, res) => {
   const user = await store.getUser(grant.userId);
   const owned = rec && (rec.userId === grant.userId || (!rec.userId && grant.userId === 'local'));
   if (!owned || !user) return res.status(404).json({ error: 'not found' });
-  auth.issueSession(req, res, user);
+  await auth.issueSession(req, res, user);
   res.redirect(`/detail.html?id=${encodeURIComponent(rec.id)}`);
 });
 
@@ -238,25 +238,25 @@ app.post('/api/recordings', upload.single('audio'), async (req, res) => {
       await blobs.save(req.file.path, blobKey);
       fs.unlink(req.file.path, () => {});
     } catch (e) {
-      return res.status(500).json({ error: `文件上传到对象存储失败: ${e.message}` });
+      fs.unlink(req.file.path, () => {});
+      return res.status(500).json({ error: '文件上传到对象存储失败，请稍后重试' });
     }
   }
+  let rec;
   try {
-    const rec = await store.create({
-    id: crypto.randomUUID(),
-    title: (req.body.title || '').trim() || null,
-    asrProvider,
-    originalName,
-    filename: blobKey,
-    size: req.file.size,
-    status: 'uploaded',
-    userId: req.user.id,
-    folder: (req.body.folder || '').trim() || null,
-    tags: parseTags(req.body.tags),
-    createdAt: new Date().toISOString(),
+    rec = await store.create({
+      id: crypto.randomUUID(),
+      title: (req.body.title || '').trim() || null,
+      asrProvider,
+      originalName,
+      filename: blobKey,
+      size: req.file.size,
+      status: 'uploaded',
+      userId: req.user.id,
+      folder: (req.body.folder || '').trim() || null,
+      tags: parseTags(req.body.tags),
+      createdAt: new Date().toISOString(),
     });
-    await queue.enqueue(rec.id); // 入队（内存模式直接异步执行，Redis 模式入 BullMQ 队列）
-    res.status(201).json(rec);
   } catch (e) {
     // 数据库创建失败时回收已写入的 blob；对象存储删除失败仅记录日志。
     try { await blobs.delete(blobKey); } catch (cleanupError) {
@@ -267,6 +267,17 @@ app.post('/api/recordings', upload.single('audio'), async (req, res) => {
     }
     throw e;
   }
+  try {
+    await queue.enqueue(rec.id); // 入队（内存模式直接异步执行，Redis 模式入 BullMQ 队列）
+  } catch (e) {
+    console.error(`[upload] ${rec.id} 入队失败:`, e.message);
+    await store.update(rec.id, { status: 'error', error: '处理任务入队失败，请稍后重试' });
+    return res.status(503).json({
+      error: '录音已保存，但处理任务暂时无法启动，请稍后重试',
+      recordingId: rec.id,
+    });
+  }
+  res.status(201).json(rec);
 });
 
 // ===== 分片上传（大文件 + 断点续传）=====
