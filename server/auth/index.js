@@ -125,6 +125,7 @@ router.post('/wechat', wrap(async (req, res) => {
       appId: process.env.WECHAT_APP_ID,
       appSecret: process.env.WECHAT_APP_SECRET,
     });
+    const user = await store.upsertWechatUser(profile);
     const token = await issueSession(req, res, user);
     res.json({ token, user: publicUser(user) });
   } catch (error) {
@@ -134,6 +135,7 @@ router.post('/wechat', wrap(async (req, res) => {
 
 router.post('/dev', wrap(async (req, res) => {
   if (!devLoginAllowed(req)) return res.status(404).json({ error: '本地测试登录未开启' });
+  const user = await store.getOrCreateLocalUser();
   const token = await issueSession(req, res, user);
   res.json({ token, user: publicUser(user) });
 }));
