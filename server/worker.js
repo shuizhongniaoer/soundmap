@@ -9,7 +9,8 @@ const queue = require('./queue');
 const store = require('./store');
 const pipeline = require('./pipeline');
 const { createShutdown } = require('./lifecycle');
-const { write: writeLog } = require('./logger');
+const { write: writeLog, logError } = require('./logger');
+const { installProcessErrorHandlers } = require('./process-errors');
 
 if (queue.isMemory) {
   console.error('[worker] 当前为内存队列模式，无需独立 Worker。请设置 REDIS_URL 后再启动 Worker。');
@@ -40,5 +41,6 @@ const shutdown = createShutdown({
     process.exit(code);
   },
 });
+installProcessErrorHandlers({ logError, shutdown });
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));

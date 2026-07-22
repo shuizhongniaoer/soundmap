@@ -21,6 +21,7 @@ const { requestLogger, logError, write: writeLog } = require('./logger');
 const { createShutdown } = require('./lifecycle');
 const { checkReadiness } = require('./health');
 const { installAsyncRouteHandling } = require('./async-routes');
+const { installProcessErrorHandlers } = require('./process-errors');
 const authRateLimit = createRateLimit({
   windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS',
   maxEnv: 'AUTH_RATE_LIMIT_MAX',
@@ -824,5 +825,6 @@ const shutdown = createShutdown({
     process.exit(code);
   },
 });
+installProcessErrorHandlers({ logError, shutdown });
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
