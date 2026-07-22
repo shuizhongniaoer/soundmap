@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 const http = require('node:http');
-const { rateLimit, createRateLimit, clearRateLimitState } = require('./rate-limit');
+const { rateLimit, createRateLimit, clearRateLimitState, getRateLimitStateSize } = require('./rate-limit');
 
 test('API 限流返回 429 和 Retry-After，并按客户端隔离', async () => {
   const oldMax = process.env.API_RATE_LIMIT_MAX;
@@ -88,5 +88,17 @@ test('认证限流默认上限为每分钟 20 次', () => {
   assert.equal(nextCount, 20);
   assert.equal(headers['X-RateLimit-Limit'], '20');
   if (oldMax === undefined) delete process.env.AUTH_RATE_LIMIT_MAX; else process.env.AUTH_RATE_LIMIT_MAX = oldMax;
+  clearRateLimitState();
+});
+
+test('限流会主动清理过期客户端桶', async () => {
+  clearRateLimitState();
+  const middleware = createRateLimit({ defaultWindowMs: 5, defaultMaxRequests: 10, namespace: 'cleanup-test' });
+  const response = { setHeader() {}, status() { return this; }, json() {} };
+  middleware({ ip: 'expired-client' }, response, () => {});
+  assert.equal(getRateLimitStateSize(), 1);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  middleware({ ip: 'fresh-client' }, response, () => {});
+  assert.equal(getRateLimitStateSize(), 1);
   clearRateLimitState();
 });

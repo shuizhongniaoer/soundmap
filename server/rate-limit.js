@@ -1,5 +1,6 @@
 // 轻量进程内 API 限流。多实例部署时应在网关或 Redis 层提供共享限流。
 const buckets = new Map();
+let lastSweepAt = 0;
 
 function clientKey(req) {
   return String(req.ip || req.socket?.remoteAddress || 'unknown').replace(/^::ffff:/, '');
@@ -23,7 +24,9 @@ function applyRateLimit(req, res, next, windowMs, maxRequests, namespace) {
   if (!Number.isFinite(windowMs) || windowMs <= 0 || !Number.isFinite(maxRequests) || maxRequests <= 0) return next();
   const now = Date.now();
   const key = `${namespace}:${clientKey(req)}`;
-  if (buckets.size > 1000 || now % 101 === 0) {
+  const sweepIntervalMs = Math.min(windowMs, 60 * 1000);
+  if (now - lastSweepAt >= sweepIntervalMs) {
+    lastSweepAt = now;
     for (const [bucketKey, bucket] of buckets) {
       if (now - bucket.startedAt >= windowMs) buckets.delete(bucketKey);
     }
@@ -51,6 +54,11 @@ const rateLimit = createRateLimit({ namespace: 'api' });
 
 function clearRateLimitState() {
   buckets.clear();
+  lastSweepAt = 0;
 }
 
-module.exports = { rateLimit, createRateLimit, clearRateLimitState };
+function getRateLimitStateSize() {
+  return buckets.size;
+}
+
+module.exports = { rateLimit, createRateLimit, clearRateLimitState, getRateLimitStateSize };
