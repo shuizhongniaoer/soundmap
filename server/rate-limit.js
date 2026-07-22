@@ -1,10 +1,4 @@
 // 轻量进程内 API 限流。多实例部署时应在网关或 Redis 层提供共享限流。
-function config() {
-  return {
-    windowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS || 60 * 1000),
-    maxRequests: Number(process.env.API_RATE_LIMIT_MAX || 120),
-  };
-}
 const buckets = new Map();
 
 function clientKey(req) {
@@ -16,18 +10,25 @@ function createRateLimit({
   maxEnv = 'API_RATE_LIMIT_MAX',
   defaultWindowMs = 60 * 1000,
   defaultMaxRequests = 120,
+  namespace = 'api',
 } = {}) {
   return function configuredRateLimit(req, res, next) {
     const windowMs = Number(process.env[windowEnv] || defaultWindowMs);
     const maxRequests = Number(process.env[maxEnv] || defaultMaxRequests);
-    return applyRateLimit(req, res, next, windowMs, maxRequests);
+    return applyRateLimit(req, res, next, windowMs, maxRequests, namespace);
   };
 }
 
-function applyRateLimit(req, res, next, windowMs, maxRequests) {
+function applyRateLimit(req, res, next, windowMs, maxRequests, namespace) {
   if (!Number.isFinite(windowMs) || windowMs <= 0 || !Number.isFinite(maxRequests) || maxRequests <= 0) return next();
   const now = Date.now();
-  const key = clientKey(req);
+  const key = `${namespace}:${clientKey(req)}`;
+  if (buckets.size > 1000 || now % 101 === 0) {
+    for (const [bucketKey, bucket] of buckets) {
+      if (now - bucket.startedAt >= windowMs) buckets.delete(bucketKey);
+    }
+  }
+  if (buckets.size >= 10000 && !buckets.has(key)) return next();
   let bucket = buckets.get(key);
   if (!bucket || now - bucket.startedAt >= windowMs) {
     bucket = { startedAt: now, count: 0 };
@@ -46,7 +47,7 @@ function applyRateLimit(req, res, next, windowMs, maxRequests) {
   return next();
 }
 
-const rateLimit = createRateLimit();
+const rateLimit = createRateLimit({ namespace: 'api' });
 
 function clearRateLimitState() {
   buckets.clear();

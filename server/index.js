@@ -23,6 +23,7 @@ const authRateLimit = createRateLimit({
   windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS',
   maxEnv: 'AUTH_RATE_LIMIT_MAX',
   defaultMaxRequests: 20,
+  namespace: 'auth',
 });
 
 const app = express();

@@ -48,7 +48,7 @@ test('认证限流使用独立环境变量', async () => {
   process.env.AUTH_RATE_LIMIT_WINDOW_MS = '60000';
   clearRateLimitState();
   const app = express();
-  app.use(createRateLimit({ windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS', maxEnv: 'AUTH_RATE_LIMIT_MAX' }));
+  app.use(createRateLimit({ windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS', maxEnv: 'AUTH_RATE_LIMIT_MAX', namespace: 'auth-test' }));
   app.get('/', (req, res) => res.json({ ok: true }));
   const server = await new Promise(resolve => {
     const value = app.listen(0, '127.0.0.1', () => resolve(value));
@@ -75,7 +75,7 @@ test('认证限流使用独立环境变量', async () => {
 test('认证限流默认上限为每分钟 20 次', () => {
   const oldMax = process.env.AUTH_RATE_LIMIT_MAX;
   delete process.env.AUTH_RATE_LIMIT_MAX;
-  const middleware = createRateLimit({ maxEnv: 'AUTH_RATE_LIMIT_MAX', defaultMaxRequests: 20 });
+  const middleware = createRateLimit({ maxEnv: 'AUTH_RATE_LIMIT_MAX', defaultMaxRequests: 20, namespace: 'default-test' });
   const headers = {};
   const req = { ip: 'default-limit-test' };
   const res = {
