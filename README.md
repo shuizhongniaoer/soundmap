@@ -103,6 +103,8 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 | Method | Path | 说明 |
 |---|---|---|
 | POST | /api/recordings | 上传音频（form-data: audio, title?），异步处理 |
+| GET | /healthz | 存活检查（不需要登录） |
+| GET | /readyz | 就绪检查：存储和队列依赖（不需要登录） |
 | GET | /api/recordings | 录音列表（`?q=` 全文搜索） |
 | GET | /api/recordings/:id | 详情（transcript / summary / sprouts / mindmap） |
 | POST | /api/recordings/:id/reprocess | 按项重新生成（`?part=summary|sprouts|mindmap|proofread|ai|all`；`full=1` 强制重新转写） |
