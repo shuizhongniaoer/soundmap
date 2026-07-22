@@ -20,3 +20,23 @@ test('JSON 写操作回收遗留锁并保留最新数据库内容', () => {
   assert.equal(fs.existsSync(lock), false);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+
+test('JSON 写入会轮换有限数量的数据库备份', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'soundmap-json-backup-'));
+  process.env.SOUNDMAP_DATA_DIR = dir;
+  process.env.SOUNDMAP_JSON_BACKUP_COUNT = '2';
+  delete require.cache[require.resolve('./storage/json')];
+  const json = require('./storage/json');
+  json.create({ id: 'first', userId: 'local', createdAt: new Date().toISOString() });
+  json.create({ id: 'second', userId: 'local', createdAt: new Date().toISOString() });
+  json.create({ id: 'third', userId: 'local', createdAt: new Date().toISOString() });
+  assert.equal(fs.existsSync(path.join(dir, 'db.json.bak.1')), true);
+  assert.equal(fs.existsSync(path.join(dir, 'db.json.bak.2')), true);
+  assert.equal(fs.existsSync(path.join(dir, 'db.json.bak.3')), false);
+  const backup = JSON.parse(fs.readFileSync(path.join(dir, 'db.json.bak.1'), 'utf8'));
+  assert.equal(backup.recordings.some(item => item.id === 'second'), true);
+  assert.equal(backup.recordings.some(item => item.id === 'third'), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+  delete process.env.SOUNDMAP_JSON_BACKUP_COUNT;
+});

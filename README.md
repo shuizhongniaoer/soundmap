@@ -41,6 +41,7 @@ mock 模式下上传任意音频文件，约 3 秒后可看到示例转写稿、
 - 每个响应都带 `X-Request-Id`。客户端可透传安全格式的 ID，服务端日志会使用同一 ID 关联请求；多实例部署应在网关保留该请求头。
 - 处理任务默认总时限 30 分钟，队列重试和停滞任务恢复参数可通过 `QUEUE_TASK_TIMEOUT_MS`、`QUEUE_LOCK_DURATION_MS`、`QUEUE_STALLED_INTERVAL_MS`、`QUEUE_MAX_STALLED_COUNT` 调整。
 - `S3_*`、`MEDIA_SIGNING_SECRET`、微信和 ASR/LLM 密钥属于敏感配置，不要提交到仓库；国内数据与海外数据应使用隔离的数据库、对象存储和队列实例。
+- JSON 开发存储默认保留最近 3 份 `db.json.bak.N` 备份，可通过 `SOUNDMAP_JSON_BACKUP_COUNT` 调整；正式环境仍应使用 PostgreSQL，并执行数据库备份与恢复演练。
 
 ## 微信登录 / 注册
 

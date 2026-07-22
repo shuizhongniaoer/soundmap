@@ -10,6 +10,20 @@ const LOCK_FILE = `${DB_FILE}.lock`;
 const LOCK_TTL_MS = Number(process.env.SOUNDMAP_JSON_LOCK_TTL_MS || 30_000);
 const LOCK_WAIT_MS = Number(process.env.SOUNDMAP_JSON_LOCK_WAIT_MS || 50);
 const lockWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+const BACKUP_COUNT = Math.max(0, Math.min(20, Number(process.env.SOUNDMAP_JSON_BACKUP_COUNT || 3)));
+
+function backupCurrentDatabase() {
+  if (BACKUP_COUNT <= 0 || !fs.existsSync(DB_FILE)) return;
+  // 轮换旧备份，最后再复制当前数据库，避免覆盖唯一可恢复版本。
+  for (let i = BACKUP_COUNT; i >= 2; i--) {
+    const source = `${DB_FILE}.bak.${i - 1}`;
+    const target = `${DB_FILE}.bak.${i}`;
+    try { fs.renameSync(source, target); } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  fs.copyFileSync(DB_FILE, `${DB_FILE}.bak.1`);
+}
 
 function withWriteLock(fn) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -67,6 +81,9 @@ function save(db) {
     } finally {
       fs.closeSync(fd);
     }
+    const verifyFd = fs.openSync(temp, 'r');
+    try { fs.fsyncSync(verifyFd); } finally { fs.closeSync(verifyFd); }
+    backupCurrentDatabase();
     fs.renameSync(temp, DB_FILE);
   } finally {
     try { fs.unlinkSync(temp); } catch { /* ignore */ }
