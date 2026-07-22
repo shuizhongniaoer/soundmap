@@ -24,6 +24,9 @@ writeLog('log', 'worker.started', {
 
 queue.start(async (recordingId, options) => {
   await pipeline.process(recordingId, options);
+}).catch(error => {
+  writeLog('error', 'worker.start_failed', { error: error.message, code: error.code });
+  process.exitCode = 1;
 });
 
 const shutdown = createShutdown({

@@ -22,4 +22,5 @@ test('异常日志输出为 JSON 且不包含原始密码', () => {
   assert.equal(parsed.event, 'test.failure');
   assert.equal(parsed.password, '[REDACTED]');
   assert.equal(parsed.error.message, 'password=[REDACTED]');
+  assert.equal(parsed.error.code, undefined);
 });

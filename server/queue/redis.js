@@ -9,6 +9,7 @@ try {
 }
 
 const crypto = require('crypto');
+const { write: writeLog, logError } = require('../logger');
 const QUEUE_NAME = 'soundmap:transcribe';
 let _queue = null;
 let _worker = null;
@@ -69,9 +70,9 @@ module.exports = {
     if (_worker) return;
     _worker = new Worker(QUEUE_NAME, async (job) => {
       const { recordingId, options } = job.data;
-      console.log(`[queue:redis] 开始处理 ${recordingId} (job=${job.id})`);
+      writeLog('log', 'queue.job_started', { recordingId, jobId: job.id });
       await processor(recordingId, options || {});
-      console.log(`[queue:redis] 完成 ${recordingId} (job=${job.id})`);
+      writeLog('log', 'queue.job_completed', { recordingId, jobId: job.id });
     }, {
       connection: connection(),
       concurrency: Number(process.env.QUEUE_CONCURRENCY || 2),
@@ -81,7 +82,7 @@ module.exports = {
       maxStalledCount: Number(process.env.QUEUE_MAX_STALLED_COUNT || 1),
     });
     _worker.on('failed', (job, err) => {
-      console.error(`[queue:redis] ${job?.data?.recordingId} 失败:`, err.message);
+      logError('queue.job_failed', err, { recordingId: job?.data?.recordingId, jobId: job?.id });
     });
   },
 

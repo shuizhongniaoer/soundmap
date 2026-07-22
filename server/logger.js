@@ -1,5 +1,5 @@
 // 统一结构化日志，并对常见凭据字段和 URL 查询参数做脱敏。
-const SENSITIVE_KEY = /password|secret|token|authorization|cookie|api[_-]?key|access[_-]?token|appsecret|code/i;
+const SENSITIVE_KEY = /password|secret|token|authorization|cookie|api[_-]?key|access[_-]?token|appsecret/i;
 const SENSITIVE_QUERY = /^(password|token|code|secret|key|signature|authorization)$/i;
 
 function redact(value, key = '') {
