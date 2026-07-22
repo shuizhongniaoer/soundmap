@@ -18,6 +18,7 @@ const { isSupportedAudioFile } = require('./audio');
 const { requestIdMiddleware, getRequestId } = require('./request-id');
 const { rateLimit, createRateLimit } = require('./rate-limit');
 const { requestLogger, logError, write: writeLog } = require('./logger');
+const { createShutdown } = require('./lifecycle');
 const authRateLimit = createRateLimit({
   windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS',
   maxEnv: 'AUTH_RATE_LIMIT_MAX',
@@ -796,12 +797,17 @@ app.use((err, req, res, next) => {
   }
 });
 
-async function shutdown(signal) {
-  console.log(`[server] 收到 ${signal}，正在关闭...`);
-  clearInterval(uploadCleanupTimer);
-  await queue.close();
-  await store.close();
-  server.close(() => process.exit(0));
-}
+const shutdown = createShutdown({
+  server,
+  cleanupTimer: uploadCleanupTimer,
+  closeQueue: () => queue.close(),
+  closeStore: () => store.close(),
+  timeoutMs: Number(process.env.SHUTDOWN_TIMEOUT_MS || 30_000),
+  onExit: (code, error, signal) => {
+    if (error) writeLog('error', 'server.shutdown_failed', { signal, error: error.message, code: error.code });
+    else writeLog('log', 'server.stopped', { code });
+    process.exit(code);
+  },
+});
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
