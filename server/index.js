@@ -20,6 +20,7 @@ const { rateLimit, createRateLimit } = require('./rate-limit');
 const { requestLogger, logError, write: writeLog } = require('./logger');
 const { createShutdown } = require('./lifecycle');
 const { checkReadiness } = require('./health');
+const { installAsyncRouteHandling } = require('./async-routes');
 const authRateLimit = createRateLimit({
   windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS',
   maxEnv: 'AUTH_RATE_LIMIT_MAX',
@@ -27,7 +28,7 @@ const authRateLimit = createRateLimit({
   namespace: 'auth',
 });
 
-const app = express();
+const app = installAsyncRouteHandling(express());
 
 function contentTypeFor(name) {
   const ext = path.extname(name || '').toLowerCase();
