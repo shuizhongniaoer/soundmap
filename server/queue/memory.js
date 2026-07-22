@@ -29,6 +29,7 @@ module.exports = {
   },
 
   // 内存模式下 start 是空操作（pipeline 在 enqueue 时已直接执行）。
+  async checkReady() { /* 内存队列始终可用。 */ },
   async start() { /* no-op */ },
   async close() {
     closing = true;

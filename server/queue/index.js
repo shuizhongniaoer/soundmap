@@ -25,6 +25,7 @@ let adapter = select();
 module.exports = {
   get name() { return adapter.name; },
   enqueue: (...a) => adapter.enqueue(...a),
+  checkReady: () => adapter.checkReady ? adapter.checkReady() : Promise.resolve(),
   start: (...a) => adapter.start(...a),
   close: (...a) => adapter.close(...a),
   getStats: () => adapter.getStats ? adapter.getStats() : Promise.resolve({}),

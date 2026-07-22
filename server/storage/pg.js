@@ -298,6 +298,10 @@ module.exports = {
     return { tokenHash, recordingId: r.recording_id, userId: r.user_id, format: r.format };
   },
 
+  async checkReady() {
+    await getPool().query('SELECT 1');
+  },
+
   async close() {
     if (pool) await pool.end();
   },

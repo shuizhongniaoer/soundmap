@@ -255,5 +255,10 @@ module.exports = {
     });
   },
 
+  async checkReady() {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.accessSync(DATA_DIR, fs.constants.R_OK | fs.constants.W_OK);
+  },
+
   async close() { /* no-op */ },
 };

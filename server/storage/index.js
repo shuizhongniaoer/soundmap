@@ -43,7 +43,7 @@ const methods = [
   'findWechatUser', 'upsertWechatUser', 'getOrCreateLocalUser', 'getUser',
   'createSession', 'findSession', 'deleteSession',
   'createOauthState', 'consumeOauthState',
-  'createDownloadToken', 'consumeDownloadToken',
+  'createDownloadToken', 'consumeDownloadToken', 'checkReady',
 ];
 
 const facade = {};

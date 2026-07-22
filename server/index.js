@@ -19,6 +19,7 @@ const { requestIdMiddleware, getRequestId } = require('./request-id');
 const { rateLimit, createRateLimit } = require('./rate-limit');
 const { requestLogger, logError, write: writeLog } = require('./logger');
 const { createShutdown } = require('./lifecycle');
+const { checkReadiness } = require('./health');
 const authRateLimit = createRateLimit({
   windowEnv: 'AUTH_RATE_LIMIT_WINDOW_MS',
   maxEnv: 'AUTH_RATE_LIMIT_MAX',
@@ -119,6 +120,18 @@ app.use(express.static(path.join(__dirname, '..', 'web'), {
     if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
   },
 }));
+app.get('/healthz', (req, res) => {
+  res.json({ status: 'ok', uptimeSeconds: Math.floor(process.uptime()), requestId: req.requestId });
+});
+app.get('/readyz', async (req, res) => {
+  const result = await checkReadiness({ store, queue });
+  res.status(result.ready ? 200 : 503).json({
+    status: result.ready ? 'ready' : 'not_ready',
+    checks: result.checks,
+    requestId: req.requestId,
+  });
+});
+
 app.use('/api/auth', authRateLimit, auth.router);
 
 // ASR 供应商临时拉取音频：短期 HMAC 签名（仅本地存储模式需要；S3 模式直接用预签名 URL）

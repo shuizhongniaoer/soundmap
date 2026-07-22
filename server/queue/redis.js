@@ -59,6 +59,10 @@ module.exports = {
     });
   },
 
+  async checkReady() {
+    await getQueue().getJobCounts();
+  },
+
   // 启动 Worker 消费队列（在独立 worker 进程中调用）
   async start(processor) {
     requireBullMQ();
