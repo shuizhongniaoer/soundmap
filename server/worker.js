@@ -6,25 +6,36 @@
 require('dotenv').config();
 
 const queue = require('./queue');
+const store = require('./store');
 const pipeline = require('./pipeline');
+const { createShutdown } = require('./lifecycle');
+const { write: writeLog } = require('./logger');
 
 if (queue.isMemory) {
   console.error('[worker] 当前为内存队列模式，无需独立 Worker。请设置 REDIS_URL 后再启动 Worker。');
   process.exit(1);
 }
 
-console.log(`[worker] 启动 BullMQ Worker (queue=${queue.name})`);
-console.log(`[worker] ASR provider: ${require('./asr').name} | LLM provider: ${require('./llm').name}`);
+writeLog('log', 'worker.started', {
+  queue: queue.name,
+  asrProvider: require('./asr').name,
+  llmProvider: require('./llm').name,
+});
 
 queue.start(async (recordingId, options) => {
   await pipeline.process(recordingId, options);
 });
 
-// 优雅关闭
-async function shutdown(signal) {
-  console.log(`[worker] 收到 ${signal}，正在关闭...`);
-  await queue.close();
-  process.exit(0);
-}
+const shutdown = createShutdown({
+  server: null,
+  cleanupTimer: null,
+  closeQueue: () => queue.close(),
+  closeStore: () => store.close(),
+  onExit: (code, error, signal) => {
+    if (error) writeLog('error', 'worker.shutdown_failed', { signal, error: error.message, code: error.code });
+    else writeLog('log', 'worker.stopped', { code });
+    process.exit(code);
+  },
+});
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
