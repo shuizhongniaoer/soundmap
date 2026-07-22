@@ -5,6 +5,7 @@ const dashscope = require('./dashscope');
 const xfyun = require('./xfyun');
 const volcengine = require('./volcengine');
 const local = require('./local');
+const { write: writeLog } = require('../logger');
 
 function available(name) {
   if (name === 'dashscope') return !!process.env.DASHSCOPE_API_KEY;
@@ -23,7 +24,7 @@ function resolve(name) {
   if (want === 'xfyun' && available('xfyun')) return xfyun;
   if (want === 'volcengine' && available('volcengine')) return volcengine;
   if (want === 'local') return local;
-  if (want !== 'mock') console.warn(`[asr] ${want} 不可用（缺少凭证），降级为 mock`);
+  if (want !== 'mock') writeLog('warn', 'asr.provider_fallback', { requestedProvider: want, selectedProvider: 'mock', reason: '缺少凭证' });
   return mock;
 }
 

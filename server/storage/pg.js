@@ -2,6 +2,7 @@
 // 需要: DATABASE_URL 环境变量 + 已执行 migrations.sql
 
 const { Pool, types } = require('pg');
+const { logError } = require('../logger');
 
 // 让 pg 自动解析 JSONB 为 JS 对象（而非字符串）
 types.setTypeParser(3802, val => val ? JSON.parse(val) : null); // jsonb
@@ -61,7 +62,7 @@ function getPool() {
       idleTimeoutMillis: 30000,
     });
     pool.on('error', (err) => {
-      console.error('[pg] 连接池错误:', err.message);
+      logError('storage.postgresql_pool_error', err);
     });
   }
   return pool;

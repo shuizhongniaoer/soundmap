@@ -4,6 +4,7 @@
 const prompts = require('./prompts');
 const { normalizeSprouts } = require('./sprouts');
 const { fetchWithTimeout } = require('../http');
+const { write: writeLog } = require('../logger');
 
 const HOST = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com').replace(/\/$/, '');
 const OPENAI_COMPAT_URL = `${HOST}/compatible-mode/v1/chat/completions`;
@@ -125,7 +126,7 @@ function resolveProvider() {
   const want = (process.env.LLM_PROVIDER || 'mock').toLowerCase();
   if (want === 'dashscope') {
     if (!process.env.DASHSCOPE_API_KEY) {
-      console.warn('[llm] LLM_PROVIDER=dashscope 但未配置 DASHSCOPE_API_KEY，降级为 mock');
+      writeLog('warn', 'llm.provider_fallback', { requestedProvider: 'dashscope', selectedProvider: 'mock', reason: '缺少凭证' });
       return mock;
     }
     return dashscope;

@@ -5,12 +5,13 @@
 
 const json = require('./json');
 const pg = require('./pg');
+const { write: writeLog } = require('../logger');
 
 function select() {
   if (process.env.DATABASE_URL) {
     try {
       require('pg');
-      console.log('[storage] 使用 PostgreSQL 存储');
+      writeLog('log', 'storage.selected', { adapter: 'postgresql' });
       return pg;
     } catch {
       throw new Error('DATABASE_URL 已设置但 pg 未安装，拒绝降级为 JSON 存储');

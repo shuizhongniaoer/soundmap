@@ -13,7 +13,7 @@ const { write: writeLog, logError } = require('./logger');
 const { installProcessErrorHandlers } = require('./process-errors');
 
 if (queue.isMemory) {
-  console.error('[worker] 当前为内存队列模式，无需独立 Worker。请设置 REDIS_URL 后再启动 Worker。');
+  writeLog('error', 'worker.invalid_queue_mode', { message: '当前为内存队列模式，无需独立 Worker。请设置 REDIS_URL 后再启动 Worker。' });
   process.exit(1);
 }
 
